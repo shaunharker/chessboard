@@ -1,6 +1,6 @@
 /// wrapper.h
 /// Shaun Harker
-/// 2018-03-01
+/// 2022-05-04
 /// MIT LICENSE
 
 #pragma once
@@ -21,4 +21,3 @@ inline void
 Binding(py::module &m) {
   // See pybind11 doc
 }
-

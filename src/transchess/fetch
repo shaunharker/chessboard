@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then printf "usage: fetch filename n m\n  where:\n    n+m is the offset in lines from the end of the file f\n    m is the number of lines to fetch\n\n"; else >puppy tail -n $(expr $2 + ${3:-1}) ${1} & cat puppy | head -n ${3:-1}; fi
+
+# question: tail must seek to end, right?
+# so if instead we pipe to tail, how can it seek
+# through the pipe? it seems like it would have to
+# read it all and buffer it. so the useless use of
+# cat is in fact *bad* because it prevents a fast
+# seek in the file. tests just now confirm it.

@@ -9,7 +9,7 @@ from setuptools.command.build_ext import build_ext
 from distutils.version import LooseVersion
 
 
-MODULENAME = 'MyModule'
+MODULENAME = 'transchess'
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
@@ -63,8 +63,8 @@ setup(
     name=MODULENAME,
     version='1.0.0',
     author='Shaun Harker',
-    author_email='shaun.harker@rutgers.edu',
-    description='My Module',
+    author_email='sharker81@gmail.com',
+    description='TransChess',
     long_description='',
     package_dir = {'': 'src'},
     ext_package=MODULENAME,
@@ -72,7 +72,7 @@ setup(
     packages=[MODULENAME],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
-    url = 'https://github.com/shaunharker/PythonBinding',
+    url = 'https://github.com/shaunharker/transchess',
     download_url = '',
     install_requires=[]
 )
