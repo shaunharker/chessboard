@@ -1,0 +1,3 @@
+import transchess
+
+assert True

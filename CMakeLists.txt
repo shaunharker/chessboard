@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 2.8.12)
-project(transchess)
+set(CMAKE_CXX_STANDARD 17)
 
+project(transchess)
 add_subdirectory(pybind11)
 
 include_directories (
