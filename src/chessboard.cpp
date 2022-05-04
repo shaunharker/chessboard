@@ -775,7 +775,6 @@ public:
       }
       ss << "\n";
     }
-    ss << "\n";
     return ss.str();
   }
 
@@ -854,7 +853,7 @@ public:
 #include <pybind11/stl.h>
 namespace py = pybind11;
 
-PYBIND11_MODULE(transchess, m) {
+PYBIND11_MODULE(chessboard, m) {
   py::class_<Chessboard>(m, "Chessboard")
     .def(py::init<>())
     .def(py::init<const std::string &>())

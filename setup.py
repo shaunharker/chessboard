@@ -6,9 +6,9 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
 ###
-MODULENAME = "transchess"
+MODULENAME = "chessboard"
 VERSION = "0.0.1"
-DESCRIPTION = "transformers learning chess"
+DESCRIPTION = "A Python chessboard with FEN and legal move generation. Implemented with C++ and pybind11."
 ###
 
 # The main interface is through Pybind11Extension.
