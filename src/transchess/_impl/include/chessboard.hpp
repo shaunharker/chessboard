@@ -300,7 +300,19 @@ public:
   mutable bool cache_is_computed;
   mutable std::vector<Move> _moves;
   mutable std::vector<std::string> _sanmoves;
+
   Chessboard(){
+    reset();
+  }
+
+  Chessboard(std::string const& game) {
+    reset();
+    std::ostringstream oss(game);
+    std::string m;
+    while(oss >> m) move(m);
+  }
+
+  void reset(){
     white = rank_1 | rank_2;
     black = rank_7 | rank_8;
     king = e1 | e8;
@@ -833,3 +845,27 @@ public:
   }
 
 };
+
+
+// pybind11
+/// Python Bindings
+
+#include <fstream>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+namespace py = pybind11;
+
+py::class_<Chessboard> (m, "Chessboard")
+  .def(py::init<void>())
+  .def(py::init<const std::string &>())
+  .def("reset", &Chessboard::reset)
+  .def("fen", &Chessboard::fen)
+  .def("legal", &Chessboard::legal_moves)
+  .def("move", &Chessboard::move)
+  .def("board", &Chessboard::board)
+  .def("__repr__", &Chessboard::fen)
+
+        // [](const Chessboard &a) {
+        //     return a.fen();
+        // }
+  );

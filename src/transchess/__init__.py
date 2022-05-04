@@ -1,7 +1,7 @@
 ### __init__.py
 ### MIT LICENSE 2022 Shaun Harker
 
-from transchess._impl import *
+from transchess._impl import Chessboard
 
 from .app import TransChess
 from .dataset import ChessDataset

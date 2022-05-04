@@ -20,7 +20,7 @@ bytes_to_tensor = lambda x: torch.tensor(np.frombuffer(
     dtype=torch.long, device="cuda")
 
 
-class Chessboard:
+class ChessboardX:
     def __init__(self, game="", data=None):
         if data is not None:
             self.data = data
@@ -65,7 +65,7 @@ class Chessboard:
         return action_target_chunk
 
 def targets_from_data(record):
-    board = Chessboard(data=record)
+    board = ChessboardX(data=record)
     moves = record["game"]
     game = ' '.join(moves)
     N = len(game.strip()) + 2
@@ -86,7 +86,7 @@ def targets_from_data(record):
 
 def targets(game):
     t = time.time()
-    board = Chessboard(game.strip())
+    board = ChessboardX(game.strip())
     print(f"C++: {time.time() - t}")
     t = time.time()
     moves = game.split()
