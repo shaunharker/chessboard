@@ -856,7 +856,7 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(transchess, m) {
   py::class_<Chessboard>(m, "Chessboard")
-    //.def(py::init<void>())
+    .def(py::init<>())
     .def(py::init<const std::string &>())
     .def("reset", &Chessboard::reset)
     .def("fen", &Chessboard::fen)
