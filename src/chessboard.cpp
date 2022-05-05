@@ -843,7 +843,22 @@ public:
     return ss.str();
   }
 
+  Chessboard clone() const {
+    return *this;
+  }
 };
+
+
+uint64_t visit(Chessboard board, int depth=0) {
+    if (depth == 0) return 1;
+    uint64_t cnt = 0;
+    for (auto move : board.legal_moves()) {
+        auto child = board.clone();
+        child.move(move);
+        cnt += visit(child, depth-1);
+    }
+    return cnt;
+}
 
 // pybind11
 /// Python Bindings
@@ -862,10 +877,12 @@ PYBIND11_MODULE(chessboard, m) {
     .def("legal", &Chessboard::legal_moves)
     .def("move", &Chessboard::move)
     .def("board", &Chessboard::board)
+    .def("clone", &Chessboard::clone)
     .def("__repr__", &Chessboard::fen);
+  m.def("visit", &visit);
 }
 
-//
+
 // int main(int argc, char * argv []) {
 //   std::deque<std::string> inputs;
 //   std::vector<std::string> game;
