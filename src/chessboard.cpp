@@ -12,7 +12,8 @@
 #include <chrono>
 #include <thread>
 #include <cmath>
-
+#include <unordered_map>
+#include <string_view>
 
 typedef std::function<uint64_t(uint64_t)> Fun;
 typedef std::array<Fun,2> FunList2;
@@ -106,9 +107,9 @@ int ntz(uint64_t x) {
 }
 
 
-std::string square(int s) {
+constexpr std::string_view square(int s) {
   char cstr[3] {(char)('a' + s%8), (char)('8' - s/8), 0};
-  return std::string(cstr);
+  return std::string_view(cstr);
 }
 
 // double pawn pushes: the move flag will be the square in front of pawn before moving
@@ -216,22 +217,22 @@ constexpr uint64_t rank_3 = a3 + b3 + c3 + d3 + e3 + f3 + g3 + h3;
 constexpr uint64_t rank_2 = a2 + b2 + c2 + d2 + e2 + f2 + g2 + h2;
 constexpr uint64_t rank_1 = a1 + b1 + c1 + d1 + e1 + f1 + g1 + h1;
 
-auto w(uint64_t x) -> uint64_t {return (x >> 1) & ~(file_h);}
-auto e(uint64_t x) -> uint64_t {return (x << 1) & ~(file_a);}
-auto s(uint64_t x) -> uint64_t {return (x << 8) & ~(rank_8);}
-auto n(uint64_t x) -> uint64_t {return (x >> 8) & ~(rank_1);}
-auto nw(uint64_t x) -> uint64_t {return n(w(x));}
-auto ne(uint64_t x) -> uint64_t {return n(e(x));}
-auto sw(uint64_t x) -> uint64_t {return s(w(x));}
-auto se(uint64_t x) -> uint64_t {return s(e(x));}
-auto nwn(uint64_t x) -> uint64_t {return n(w(n(x)));}
-auto nen(uint64_t x) -> uint64_t {return n(e(n(x)));}
-auto sws(uint64_t x) -> uint64_t {return s(w(s(x)));}
-auto ses(uint64_t x) -> uint64_t {return s(e(s(x)));}
-auto wnw(uint64_t x) -> uint64_t {return w(n(w(x)));}
-auto ene(uint64_t x) -> uint64_t {return e(n(e(x)));}
-auto wsw(uint64_t x) -> uint64_t {return w(s(w(x)));}
-auto ese(uint64_t x) -> uint64_t {return e(s(e(x)));}
+constexpr auto w(uint64_t x) -> uint64_t {return (x >> 1) & ~(file_h);}
+constexpr auto e(uint64_t x) -> uint64_t {return (x << 1) & ~(file_a);}
+constexpr auto s(uint64_t x) -> uint64_t {return (x << 8) & ~(rank_8);}
+constexpr auto n(uint64_t x) -> uint64_t {return (x >> 8) & ~(rank_1);}
+constexpr auto nw(uint64_t x) -> uint64_t {return n(w(x));}
+constexpr auto ne(uint64_t x) -> uint64_t {return n(e(x));}
+constexpr auto sw(uint64_t x) -> uint64_t {return s(w(x));}
+constexpr auto se(uint64_t x) -> uint64_t {return s(e(x));}
+constexpr auto nwn(uint64_t x) -> uint64_t {return n(w(n(x)));}
+constexpr auto nen(uint64_t x) -> uint64_t {return n(e(n(x)));}
+constexpr auto sws(uint64_t x) -> uint64_t {return s(w(s(x)));}
+constexpr auto ses(uint64_t x) -> uint64_t {return s(e(s(x)));}
+constexpr auto wnw(uint64_t x) -> uint64_t {return w(n(w(x)));}
+constexpr auto ene(uint64_t x) -> uint64_t {return e(n(e(x)));}
+constexpr auto wsw(uint64_t x) -> uint64_t {return w(s(w(x)));}
+constexpr auto ese(uint64_t x) -> uint64_t {return e(s(e(x)));}
 
 const FunList8 kingmoves {n, w, s, e, nw, ne, sw, se};
 const FunList4 bishopmoves {nw, ne, sw, se};
@@ -281,6 +282,7 @@ void bitapply(uint64_t x, F f) {
     x = tmp;
   }
 }
+
 
 class Chessboard {
 public:

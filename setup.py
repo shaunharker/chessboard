@@ -25,6 +25,7 @@ ext_modules = [
         ["src/chessboard.cpp"],
         # Example: passing in the version to the compiled code
         define_macros = [('VERSION_INFO', VERSION)],
+        cxx_std="17"
         ),
 ]
 
