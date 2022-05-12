@@ -44,6 +44,7 @@ constexpr auto enumerate(Seq seq) {
 
 // Bitboards
 
+
 // Chessboard squares are represented as integers in range(64)
 // as follows:
 //   0 ~ a8, 1 ~ b8, ..., 62 ~ g1, 63 ~ h1
@@ -54,20 +55,34 @@ constexpr auto squares = range<64>();
 // the least significant bit corresponds to the integer 0,
 // and so on.
 typedef uint64_t Bitboard;
+typedef uint8_t Square;
 
 // The singleton Bitboards, representing the subset
 // consisting of one Square, can be constructed from
 // a Square via the power of two operation.
-constexpr Bitboard square_to_bitboard(Square i) {
-  return Bitboard(1) << i;
+constexpr auto twopow = [](Square x){
+  return Bitboard(1) << x;};
+
+constexpr Square ntz(Bitboard x) {
+  constexpr auto debruijn
+      {0, 47,  1, 56, 48, 27,  2, 60,
+      57, 49, 41, 37, 28, 16,  3, 61,
+      54, 58, 35, 52, 50, 42, 21, 44,
+      38, 32, 29, 23, 17, 11,  4, 62,
+      46, 55, 26, 59, 40, 36, 15, 53,
+      34, 51, 20, 43, 31, 22, 10, 45,
+      25, 39, 14, 33, 19, 30,  9, 24,
+      13, 18,  8, 12,  7,  6,  5, 63};
+  return [(0x03f79d71b4cb0a89*(x^(x-1)))>>58];
 }
+
 
 // We often want to iterate over the sequence
 //  (i, square_to_bitboard(i)) from i = 0, ..., 63,
 // so we produce the following array (i.e. type
 //  std::array<std::pair<Square, Bitboard>, 64>)
 constexpr auto SquareBitboardRelation =
-  enumerate(map(square_to_bitboard, squares));
+  enumerate(map(twopow, squares));
 
 // Rooks, Bishops, and Queens are "slider" pieces,
 // and we need to generate masks showing how they
@@ -109,7 +124,8 @@ constexpr Bitboard antidiagonal = 0x0102040810204080UL;
 
 // The following functions translate bitboards "west" "east"
 // "south" "north" and so on. Bits do not "roll around" but instead
-// are lost if they go over the edge.
+// are lost if they go over the edge. North is towards Black,
+// West is towards queenside.
 constexpr auto w(Bitboard x) -> Bitboard {return (x >> 1) & ~(file_h);}
 constexpr auto e(Bitboard x) -> Bitboard {return (x << 1) & ~(file_a);}
 constexpr auto s(Bitboard x) -> Bitboard {return (x << 8) & ~(rank_8);}
@@ -130,7 +146,7 @@ constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x)));}
 // Given a chessboard square i and the Bitboard of empty squares
 // on it's "+"-mask, this function determines those squares
 // a rook or queen is "attacking".
-constexpr Bitboard rookcollisionfreehash(int i, Bitboard const& E) {  //
+constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {  //
     // E is empty squares intersected with rook "+"-mask
     auto constexpr A = antidiagonal;
     auto constexpr T = rank_8;
@@ -143,7 +159,7 @@ constexpr Bitboard rookcollisionfreehash(int i, Bitboard const& E) {  //
 // Given a singleton bitboard x and the set of empty squares
 // on it's "x"-mask, this function packages that information
 // into a unique 22-bit key for lookup table access.
-constexpr Bitboard bishopcollisionfreehash(int i, Bitboard const& E) {  //
+constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {  //
   // E is empty squares intersected with bishop "X"-mask
   auto row = i >> 3;  // 1
   auto col = i & 7;  // 1
@@ -249,30 +265,31 @@ constexpr std::array<Bitboard, 64> computekingthreats(){
 constexpr std::array<Bitboard, 64> KINGTHREATS = computekingthreats();
 
 
-Bitboard const& rookthreats(int i, Bitboard const& empty) {
+Bitboard const& rookthreats(Square i, Bitboard const& empty) {
   return ROOKTHREATS[rookcollisionfreehash(i, empty & ROOKMASK[i])];
 }
 
-Bitboard const& bishopthreats(int i, Bitboard const& empty) {
+Bitboard const& bishopthreats(Square i, Bitboard const& empty) {
   return BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])];
 }
 
-Bitboard const& queenthreats(int i, Bitboard const& empty) {
+Bitboard const& queenthreats(Square i, Bitboard const& empty) {
   return ROOKTHREATS[rookcollisionfreehash(i, empty & ROOKMASK[i])] |
     BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])];
 }
 
-Bitboard const& knightthreats(int i) {
+Bitboard const& knightthreats(Square i) {
   return KNIGHTTHREATS[i];
 }
 
-Bitboard const& kingthreats(int i) {
+Bitboard const& kingthreats(Square i) {
   return KINGTHREATS[i];
 }
 
-Bitboard pawnthreats(Bitboard const& X, bool color) { // 4
+Bitboard pawnthreats(Bitboard const& X, bool color) {
   return color ? ((X << 7) | (X << 9)) : ((X >> 7) | (X >> 9));
 }
+
 
 
 // Move flags
@@ -294,20 +311,22 @@ constexpr auto CAPTURED = CAPTURE_P_STANDARD |
 
 constexpr MoveFlag MOVE_P_STANDARD = 1 << 6;
 constexpr MoveFlag MOVE_P_DOUBLEPUSH = 1 << 7;
-constexpr MoveFlag MOVE_P_PROMOTE_Q = 1 << 8;
-constexpr MoveFlag MOVE_P_PROMOTE_R = 1 << 9;
-constexpr MoveFlag MOVE_P_PROMOTE_B = 1 << 10;
-constexpr MoveFlag MOVE_P_PROMOTE_N = 1 << 11;
-constexpr MoveFlag MOVE_Q = 1 << 12;
-constexpr MoveFlag MOVE_R = 1 << 13;
-constexpr MoveFlag MOVE_B = 1 << 14;
-constexpr MoveFlag MOVE_N = 1 << 15;
-constexpr MoveFlag MOVE_K_STANDARD = 1 << 16;
-constexpr MoveFlag MOVE_K_KINGSIDE_CASTLE = 1 << 17;
-constexpr MoveFlag MOVE_K_QUEENSIDE_CASTLE = 1 << 18;
+constexpr MoveFlag MOVE_P_EN_PASSANT = 1 << 8;
+constexpr MoveFlag MOVE_P_PROMOTE_Q = 1 << 9;
+constexpr MoveFlag MOVE_P_PROMOTE_R = 1 << 10;
+constexpr MoveFlag MOVE_P_PROMOTE_B = 1 << 11;
+constexpr MoveFlag MOVE_P_PROMOTE_N = 1 << 12;
+constexpr MoveFlag MOVE_Q = 1 << 13;
+constexpr MoveFlag MOVE_R = 1 << 14;
+constexpr MoveFlag MOVE_B = 1 << 15;
+constexpr MoveFlag MOVE_N = 1 << 16;
+constexpr MoveFlag MOVE_K_STANDARD = 1 << 17;
+constexpr MoveFlag MOVE_K_KINGSIDE_CASTLE = 1 << 18;
+constexpr MoveFlag MOVE_K_QUEENSIDE_CASTLE = 1 << 19;
 
 constexpr auto MOVED = MOVE_P_STANDARD |
                        MOVE_P_DOUBLEPUSH |
+                       MOVE_P_EN_PASSANT |
                        MOVE_P_PROMOTE_Q |
                        MOVE_P_PROMOTE_R |
                        MOVE_P_PROMOTE_B |
@@ -320,12 +339,16 @@ constexpr auto MOVED = MOVE_P_STANDARD |
                        MOVE_K_KINGSIDE_CASTLE |
                        MOVE_K_QUEENSIDE_CASTLE;
 
+constexpr MoveFlag EN_PASSANT = MOVE_P_EN_PASSANT | CAPTURE_P_EN_PASSANT;
 
 struct Move {  // 20 bytes
-  Bitboard source;
-  Bitboard target;
+  Square s;
+  Square t;
+  Bitboard ep; // for reversibility
+  Bitboard rights;
   MoveFlag flags;
 };
+
 
 class Chess {
 private:
@@ -338,10 +361,9 @@ private:
   Bitboard bishop;
   Bitboard knight;
   Bitboard enpassant_square; // behind double-pushed pawn
-  Bitboard castling_rights; // K/Q/k/q ~ h1/a1/h8/a8
+  Bitboard castling_rights; // a1, a8, h1, h8  (a six bit solution would be better)
   char board[64];
   uint64_t ply;
-  uint64_t halfmove_clock;
 
 public:
 
@@ -357,33 +379,20 @@ public:
     enpassant_square = 0x0000000000000000;  // behind double-pushed pawn
     castling_rights =  0x8100000000000081;  // a1 | a8 | h1 | h8
     ply = 0;
-    halfmove_clock = 0;
   }
 
   void
   playmove(Move const& m) {
-    auto const& [s, t, flags] = m;
-
+    auto const& [si, ti, flags, m_ep, m_cr] = m;
     bool color = ply & 1;
     Bitboard const& us = color ? black : white;
     Bitboard const& them = color ? white : black;
-
+    auto s = 1UL << si;
+    auto t = 1UL << ti;
     auto st = s | t;
     ply += 1;
-
-    auto si = ntz(s);
-    auto ti = ntz(t);
-    board[ti] = board[si];
-    board[si] = '.';
-
-    if (flags & CAPTURED) {
-      halfmove_clock = 0;
-    } else {
-      halfmove_clock += 1;
-    }
-
     enpassant_square &= color ? rank_3 : rank_6;
-
+    //
     switch (flags & CAPTURED) {
       case CAPTURE_P_STANDARD:
         pawn ^= t;
@@ -393,7 +402,7 @@ public:
         auto ci = ti + (color ? -8 : 8);
         board[ci] = '.';
         auto captured = 1UL << ci;
-        pawn ^= st | captured;
+        pawn ^= captured;
         them ^= captured;
         break;
       case CAPTURE_Q:
@@ -420,6 +429,8 @@ public:
         us ^= st;
         king ^= st;
         castling_rights &= color ? rank_1 : rank_8;
+        board[ti] = board[si];
+        board[si] = '.';
         break;
       case MOVE_K_KINGSIDE_CASTLE:
         king ^= st;
@@ -428,6 +439,10 @@ public:
         us ^= color ? 0x00000000000000F0UL
                     : 0xF000000000000000UL;
         castling_rights &= color ? rank_1 : rank_8;
+        board[ti] = board[si];
+        board[si] = '.';
+        board[si-1] = color ? "r" : "R";
+        board[si-4] = '.';
         break;
       case MOVE_K_QUEENSIDE_CASTLE:
         king ^= st;
@@ -436,71 +451,232 @@ public:
         us ^= color ? 0x0900000000000009UL
                     : 0x0000000000000009UL;
         castling_rights &= color ? rank_1 : rank_8;
+        board[ti] = board[si];
+        board[si] = '.';
+        board[si+1] = color ? "r" : "R";
+        board[si+3] = '.';
         break;
       case MOVE_P_STANDARD:
         pawn ^= st;
         us ^= st;
+        board[ti] = board[si];
+        board[si] = '.';
         break;
       case MOVE_P_DOUBLEPUSH:
         pawn ^= st;
         us ^= st;
         enpassant_square = t << (color ? -8 : 8);
+        board[ti] = board[si];
+        board[si] = '.';
+        break;
+      case MOVE_P_EN_PASSANT:
+        pawn ^= st;
+        us ^= st;
+        board[ti] = board[si];
+        board[si] = '.';
         break;
       case MOVE_P_PROMOTE_Q:
         pawn ^= s;
         queen ^= t;
         us ^= st;
-        board[ti] += ('q'-'p')
+        board[ti] = ('q'-'p') + board[si];
+        board[si] = '.';
         break;
       case MOVE_P_PROMOTE_N:
         pawn ^= s;
         knight ^= t;
         us ^= st;
-        board[ti] += ('n'-'p')
+        board[ti] = ('n'-'p') + board[si];
+        board[si] = '.';
         break;
       case MOVE_P_PROMOTE_R:
         pawn ^= s;
         rook ^= t;
         us ^= st;
-        board[ti] += ('r'-'p')
+        board[ti] += ('r'-'p') + board[si];
+        board[si] = '.';
         break;
       case MOVE_P_PROMOTE_B:
         pawn ^= s;
         bishop ^= t;
         us ^= st;
-        board[ti] += ('b'-'p')
+        board[ti] += ('b'-'p') + board[si];
+        board[si] = '.';
         break;
       case MOVE_Q:
         queen ^= st;
         us ^= st;
+        board[ti] = board[si];
+        board[si] = '.';
         break;
       case MOVE_R:
         rook ^= st;
         castling_rights &= ~st;
         us ^= st;
+        board[ti] = board[si];
+        board[si] = '.';
         break;
       case MOVE_B:
         bishop ^= st;
         us ^= st;
+        board[ti] = board[si];
+        board[si] = '.';
         break;
       case MOVE_N:
         knight ^= st;
         us ^= st;
+        board[ti] = board[si];
+        board[si] = '.';
         break;
     }
   }
 
-  Bitboard attackers(int i) {
+  void undomove(Move const& m) {
+    auto const& [si, ti, flags, m_ep, m_cr] = m;
+    ply -= 1;
     bool color = ply & 1;
     Bitboard const& us = color ? black : white;
     Bitboard const& them = color ? white : black;
+    auto s = 1UL << si;
+    auto t = 1UL << ti;
+    auto st = s | t;
+
+    switch (flags & MOVED) {
+      case MOVE_K_STANDARD:
+        us ^= st;
+        king ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_K_KINGSIDE_CASTLE:
+        king ^= st;
+        rook ^= color ? 0x00000000000000A0UL
+                      : 0xA000000000000000UL;
+        us ^= color ? 0x00000000000000F0UL
+                    : 0xF000000000000000UL;
+        board[si] = board[ti];
+        board[si+3] = board[si+1];
+        board[ti] = '.';
+        board[si+1] = '.';
+        break;
+      case MOVE_K_QUEENSIDE_CASTLE:
+        king ^= st;
+        rook ^= color ? 0x00000000000000A0UL
+                      : 0xA000000000000000UL;
+        us ^= color ? 0x0900000000000009UL
+                    : 0x0000000000000009UL;
+        board[si] = board[ti];
+        board[si-4] = board[si-1];
+        board[ti] = '.';
+        board[si-1] = '.';
+        break;
+      case MOVE_P_STANDARD:
+        pawn ^= st;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_P_DOUBLEPUSH:
+        pawn ^= st;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_P_PROMOTE_Q:
+        pawn ^= s;
+        queen ^= t;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_P_PROMOTE_N:
+        pawn ^= s;
+        knight ^= t;
+        us ^= st;
+        board[si] = color ? 'p' : 'P';
+        break;
+      case MOVE_P_PROMOTE_R:
+        pawn ^= s;
+        rook ^= t;
+        us ^= st;
+        board[si] = color ? 'p' : 'P';
+        break;
+      case MOVE_P_PROMOTE_B:
+        pawn ^= s;
+        bishop ^= t;
+        us ^= st;
+        board[si] = color ? 'p' : 'P';
+        break;
+      case MOVE_Q:
+        queen ^= st;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_R:
+        rook ^= st;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_B:
+        bishop ^= st;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_N:
+        knight ^= st;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+    }
+
+    switch (flags & CAPTURED) {
+      case CAPTURE_P_STANDARD:
+        pawn ^= t;
+        them ^= t;
+        board[ti] = color ? 'P' : 'p';
+        break;
+      case CAPTURE_P_EN_PASSANT:
+        auto ci = ti + (color ? -8 : 8);
+        board[ti] = '.';
+        board[ci] = color ? 'P' : 'p';
+        auto captured = 1UL << ci;
+        pawn ^= st | captured;
+        them ^= captured;
+        break;
+      case CAPTURE_Q:
+        queen ^= t;
+        them ^= t;
+        board[ti] = color ? 'Q' : 'q';
+        break;
+      case CAPTURE_R:
+        rook ^= t;
+        them ^= t;
+        board[ti] = color ? 'R' : 'r';
+        break;
+      case CAPTURE_B:
+        bishop ^= t;
+        them ^= t;
+        board[ti] = color ? 'B' : 'b';
+        break;
+      case CAPTURE_N:
+        knight ^= t;
+        them ^= t;
+        board[ti] = color ? 'N' : 'n';
+        break;
+      case 0:
+        board[ti] = '.';
+    }
+
+    enpassant_square = m_ep;
+    castling_rights = m_cr;
+  }
+
+  auto attackers (Square i, bool color, Bitboard const& us,
+    Bitboard const& them) -> Bitboard {
     auto empty = ~(us | them);
     return them & (
-      (kingthreats(i) & king)                     |
-      (knightthreats(i) & knight)                 |
-      (bishopthreats(i, empty) & bishop_or_queen) |
-      (rookthreats(i, empty) & rook_or_queen)     |
-      (pawnthreats(i, color) & pawn));
+      (kingthreats(i) & king) |
+      (knightthreats(i) & knight) |
+      (bishopthreats(i, empty) & bishop) |
+      (rookthreats(i, empty) & rook) |
+      (queenthreats(i, empty) & queen) |
+      (pawnthreats(1UL << i, ~color) & pawn));
   }
 
   std::vector<Move> legal_moves() {
@@ -509,106 +685,105 @@ public:
     Bitboard const& them = color ? white : black;
     Bitboard const& endrank = color ? rank_1 : rank_8;
     auto our_king = king & us;
+    auto oki = ntz(our_king);
     auto empty = ~(us | them);
     auto not_us = ~us;
 
     std::vector<Move> result;
 
     auto add_if_legal = [&](Move const& m) {
-      auto const& [s, t, flags] = m;
-      // TODO: OPTIMIZE THIS, INTRODUCE "UNDO MOVE", reversible stack of moves
-      // tree search without copying
-      auto clone = *this;  // code smell: shouldn't copy new object
-      auto clone = playmove(m);
-      auto our_maybe_moved_king = (s & king) ? t : our_king;
-      if (clone.attackers(ntz(our_maybe_moved_king)) == 0) {
-        result.push_back(m);
-      }
+      // auto const& [si, ti, flags] = m;
+      playmove(m);
+      auto oki = ntz(us & king);
+      if (attackers(oki, color, us, them) == 0) result.push_back(m);
+      undomove(m);
     };
 
-    auto add = [&](int si, Bitboard T, MoveFlag flags){
+    auto add = [&](Square si, Bitboard T, MoveFlag flags){
       while (T) {
         t = ((T ^ (T - 1)) >> 1) + 1;
         T ^= t;
         auto ti = ntz(t);
         switch(board[ti]) {
           case '.':
-            add_if_legal({si, ti, flags});
+            add_if_legal({si, ti, flags, enpassant_square, castling_rights});
             break;
           case 'Q':
-            add_if_legal({si, ti, CAPTURE_Q | flags});
+            add_if_legal({si, ti, CAPTURE_Q | flags, enpassant_square, castling_rights});
             break;
           case 'q':
-            add_if_legal({si, ti, CAPTURE_Q | flags});
+            add_if_legal({si, ti, CAPTURE_Q | flags, enpassant_square, castling_rights});
             break;
           case 'R':
-            add_if_legal({si, ti, CAPTURE_R | flags});
+            add_if_legal({si, ti, CAPTURE_R | flags, enpassant_square, castling_rights});
             break;
           case 'r':
-            add_if_legal({si, ti, CAPTURE_R | flags});
+            add_if_legal({si, ti, CAPTURE_R | flags, enpassant_square, castling_rights});
             break;
           case 'B':
-            add_if_legal({si, ti, CAPTURE_B | flags});
+            add_if_legal({si, ti, CAPTURE_B | flags, enpassant_square, castling_rights});
             break;
           case 'b':
-            add_if_legal({si, ti, CAPTURE_B | flags});
+            add_if_legal({si, ti, CAPTURE_B | flags, enpassant_square, castling_rights});
             break;
           case 'N':
-            add_if_legal({si, ti, CAPTURE_N | flags});
+            add_if_legal({si, ti, CAPTURE_N | flags, enpassant_square, castling_rights});
             break;
           case 'n':
-            add_if_legal({si, ti, CAPTURE_N | flags});
+            add_if_legal({si, ti, CAPTURE_N | flags, enpassant_square, castling_rights});
             break;
           case 'P':
-            add_if_legal({si, ti, CAPTURE_P | flags});
+            add_if_legal({si, ti, CAPTURE_P | flags, enpassant_square, castling_rights});
             break;
           case 'p':
-            add_if_legal({si, ti, CAPTURE_P | flags});
+            add_if_legal({si, ti, CAPTURE_P | flags, enpassant_square, castling_rights});
             break;
         }
       }
     };
 
-    // Pseudolegal King moves
+    // Standard King Moves (castling comes later)
     auto oki = ntz(our_king);
     add(oki, kingthreats(oki) & not_us, MOVE_K_STANDARD);
 
-
+    // Queen Moves
     auto S = queen & us;
     while (S) {
-      auto x = ((S ^ (S - 1)) >> 1) + 1;
-      S ^= x;
-      auto i = ntz(x);
-      add(i, rookthreats(i) & not_us, MOVE_Q);
-      add(i, bishopthreats(i) & not_us, MOVE_Q);
+      auto s = ((S ^ (S - 1)) >> 1) + 1;
+      S ^= s;
+      auto si = ntz(s);
+      add(si, rookthreats(si) & not_us, MOVE_Q);
+      add(si, bishopthreats(si) & not_us, MOVE_Q);
     }
 
+    // Rook moves
     S = rook & us;
     while (S) {
-      auto x = ((S ^ (S - 1)) >> 1) + 1;
-      S ^= x;
-      auto i = ntz(x);
-      add(x, rookthreats(x) & not_us, MOVE_R);
+      auto s = ((S ^ (S - 1)) >> 1) + 1;
+      S ^= s;
+      auto si = ntz(s);
+      add(si, rookthreats(si) & not_us, MOVE_R);
     }
 
+    // Bishop moves
     S = bishop & us;
     while (S) {
-      auto x = ((S ^ (S - 1)) >> 1) + 1;
-      S ^= x;
-      auto i = ntz(x);
-      add(x, bishopthreats(x) & not_us, MOVE_B);
+      auto s = ((S ^ (S - 1)) >> 1) + 1;
+      S ^= s;
+      auto si = ntz(s);
+      add(si, bishopthreats(si) & not_us, MOVE_B);
     }
 
-
+    // Knight moves
     S = knight & us;
     while (S) {
-      auto x = ((S ^ (S - 1)) >> 1) + 1;
-      S ^= x;
-      auto i = ntz(x);
-      add(x, knightthreats(x) & not_us, MOVE_N);
+      auto s = ((S ^ (S - 1)) >> 1) + 1;
+      S ^= s;
+      auto si = ntz(s);
+      add(si, knightthreats(si) & not_us, MOVE_N);
     }
 
-    // Pseudolegal Pawn pushes
+    // Pawn pushs
     auto our_pawns = pawn & us;
     int pp = color ? 8 : -8; // single pawn push offset
     auto T = (our_pawns << pp) & empty;
@@ -620,16 +795,16 @@ public:
       auto ti = si + pp;
 
       if (y & endrank) {
-        add_if_legal({si, ti, MOVE_P_PROMOTE_Q});
-        add_if_legal({si, ti, MOVE_P_PROMOTE_R});
-        add_if_legal({si, ti, MOVE_P_PROMOTE_B});
-        add_if_legal({si, ti, MOVE_P_PROMOTE_N});
+        add_if_legal({si, ti, MOVE_P_PROMOTE_Q, enpassant_square, castling_rights});
+        add_if_legal({si, ti, MOVE_P_PROMOTE_R, enpassant_square, castling_rights});
+        add_if_legal({si, ti, MOVE_P_PROMOTE_B, enpassant_square, castling_rights});
+        add_if_legal({si, ti, MOVE_P_PROMOTE_N, enpassant_square, castling_rights});
       } else {
-        add_if_legal({si, ti, MOVE_P_STANDARD});
+        add_if_legal({si, ti, MOVE_P_STANDARD, enpassant_square, castling_rights});
       }
     }
 
-    // Pseudolegal Pawn captures
+    // Pawn captures (except en passant)
     T = pawnthreats(our_pawns, color) & them;
     while (T) {
       auto t = ((T ^ (T - 1)) >> 1) + 1;
@@ -641,17 +816,17 @@ public:
         S ^= s;
         auto si = ntz(s);
         if (y & endrank) {
-          add_if_legal({si, ti, MOVE_P_PROMOTE_Q});
-          add_if_legal({si, ti, MOVE_P_PROMOTE_R});
-          add_if_legal({si, ti, MOVE_P_PROMOTE_B});
-          add_if_legal({si, ti, MOVE_P_PROMOTE_N});
+          add(si, t, MOVE_P_PROMOTE_Q);
+          add(si, t, MOVE_P_PROMOTE_R);
+          add(si, t, MOVE_P_PROMOTE_B);
+          add(si, t, MOVE_P_PROMOTE_N);
         } else {
-          add_if_legal({si, ti, MOVE_P_STANDARD});
+          add(si, t, MOVE_P_STANDARD);
         }
       }
     }
 
-    // Pseudolegal Double Pawn pushes
+    // Double Pawn pushes
     auto dpp = pp << 1; // double pawn push offset
     S = our_pawns & (color ? 0x000000000000FF00UL :
                              0x00FF000000000000UL);
@@ -662,41 +837,41 @@ public:
       auto s = t >> dpp;
       auto si = ntz(s);
       auto ti = si + dpp;
-      add_if_legal({si, ti, DOUBLEPUSH});
+      add_if_legal({si, ti, DOUBLEPUSH, enpassant_square, castling_rights});
     }
 
-    // Pseudolegal En Passant
+    // En Passant
     S = pawnthreats(enpassant_square, ~color) & our_pawns;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
-      add_if_legal({ntz(s), ntz(enpassant_square), EN_PASSANT});
+      add_if_legal({si, ntz(enpassant_square), EN_PASSANT, enpassant_square, castling_rights});
     }
 
-    // Legal Kingside Castle
+    // Kingside Castle
     if (castling_rights & (color ? (1UL << 7) : (1UL << 63))) {
       auto conf = (color ? 240UL : (240UL << 56));
       if ((us & conf) == (color ? 144UL : (144UL << 56))) {
         if ((empty & conf) == (color ? 96UL : (96UL << 56))) {
-          if ((attackers(oki + 0) == 0) &&
-              (attackers(oki + 1) == 0) &&
-              (attackers(oki + 2) == 0)) {
-              result.push_back({oki, oki + 2, KINGSIDE_CASTLE});
+          if ((attackers(oki + 0, color, us, them) == 0) &&
+              (attackers(oki + 1, color, us, them) == 0) &&
+              (attackers(oki + 2, color, us, them) == 0)) {
+              result.push_back({oki, oki + 2, KINGSIDE_CASTLE, enpassant_square, castling_rights});
           }
         }
       }
     }
 
-    // Legal Queenside Castle
+    // Queenside Castle
     if (castling_rights & (color ? (1UL << 0) : (1UL << 56))) {
       auto conf = (color ? 31UL : (31UL << 56));
       if ((us & conf) == (color ? 17UL : (17UL << 56))) {
         if ((empty & conf) == (color ? 14UL : (14UL << 56))) {
-          if ((attackers(oki - 0) == 0) &&
-              (attackers(oki - 1) == 0) &&
-              (attackers(oki - 2) == 0)) {
-              result.push_back({oki, oki - 2, QUEENSIDE_CASTLE});
+          if ((attackers(oki - 0, color, us, them) == 0) &&
+              (attackers(oki - 1, color, us, them) == 0) &&
+              (attackers(oki - 2, color, us, them) == 0)) {
+              result.push_back({oki, oki - 2, QUEENSIDE_CASTLE, enpassant_square, castling_rights});
           }
         }
       }
@@ -707,10 +882,10 @@ public:
 };
 
 int main(int argc, char * argv []) {
-  constexpr auto g = newgame();
-  auto moves = legal_moves(g);
+  auto board = Chess();
+  auto moves = board.legal_moves();
   for (auto const& move : moves) {
-    std::cout << ntz(move.source) << " " << ntz(move.target) << " " << move.flags << "\n";
+    std::cout << move.s << " " << move.t << " " << move.flags << "\n";
   }
   return 0;
 }
