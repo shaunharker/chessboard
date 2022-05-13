@@ -59,6 +59,23 @@ constexpr auto squares = range<64>();
 typedef uint64_t Bitboard;
 typedef int Square;
 
+// debugging tool: type wrapper for cout
+struct Vizboard {
+  Bitboard x;
+};
+
+// debugging tool
+std::ostream & operator << (std::ostream & stream, Vizboard x) {
+  stream << "as bitset: " << std::bitset<64>(x.x) << "\n";
+  for (int row = 0; row < 8; ++ row) {
+    for (int col = 0; col < 8; ++ col) {
+      stream << ((x.x & (1UL << (8*row+col))) ? "1" : "0");
+    }
+    stream << "\n";
+  }
+  return stream;
+}
+
 // The singleton Bitboards, representing the subset
 // consisting of one Square, can be constructed from
 // a Square via the power of two operation.
@@ -229,11 +246,15 @@ computebishopthreats(){
     Square const t = row-col;
     for (int k = 0x0000; k <= 0xFFFF; k += 0x0001) {
       Bitboard E = Bitboard(0);
-      for (int d = 0; d <= s; ++d) {
-        E |= (k & (1 << d)) ? (1UL << (8*(s-d) + d)) : 0;
+      for (int d = 0; d < 8; ++d) {
+        Square r = row + col - d;
+        if (r < 0 || r >= 8) continue;
+        E |= (k & (1 << d)) ? (1UL << (8*r + d)) : 0;
       }
-      for (int d = std::max(-t, Square(0)); d < 8-t; ++d) {
-        E |= (k & (1 << (8+d))) ? (1UL << (8*(t+d) + d)) : 0;
+      for (int d = 0; d < 8; ++d) {
+        Square r = row - col + d;
+        if (r < 0 || r >= 8) continue;
+        E |= (k & (1 << (8+d))) ? (1UL << (8*r + d)) : 0;
       }
       // E is empty squares intersected with bishop "x"-mask possibility
       auto idx = bishopcollisionfreehash(i, E);
@@ -302,7 +323,10 @@ Bitboard const& kingthreats(Square i) {
 }
 
 Bitboard pawnthreats(Bitboard const& X, bool color) {
-  return color ? ((X << 7) | (X << 9)) : ((X >> 7) | (X >> 9));
+  constexpr Bitboard not_file_a = ~file_a;
+  constexpr Bitboard not_file_h = ~file_h;
+  return color ? (((not_file_a & X) << 7) | ((not_file_h & X) << 9)) :
+    (((not_file_h & X) >> 7) | ((not_file_a & X) >> 9));
 }
 
 
@@ -365,10 +389,8 @@ struct Move {  // 20 bytes
 };
 
 
-const char* initboard = "rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR";
-
 class Chess {
-private:
+public:
   Bitboard white;
   Bitboard black;
   Bitboard king;
@@ -379,12 +401,10 @@ private:
   Bitboard knight;
   Bitboard enpassant_square; // behind double-pushed pawn
   Bitboard castling_rights; // a1, a8, h1, h8  (a six bit solution would be better)
-  char board[64];
+  char board[65];
   uint64_t ply;
 
-public:
-
-  Chess() : board() {
+  Chess() : board("rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR") {
     white =            0xFFFF000000000000;  // rank_1 | rank_2;
     black =            0x000000000000FFFF;  // rank_7 | rank_8;
     king =             0x1000000000000010;  // e1 | e8;
@@ -396,12 +416,12 @@ public:
     enpassant_square = 0x0000000000000000;  // behind double-pushed pawn
     castling_rights =  0x8100000000000081;  // a1 | a8 | h1 | h8
     ply = 0;
-    for (int k=0; k<64; ++k) board[k] = initboard[k];
   }
 
   void
   playmove(Move const& m) {
     auto const& [si, ti, flags, m_ep, m_cr] = m;
+
     bool color = ply & 1;
     Bitboard & us = color ? black : white;
     Bitboard & them = color ? white : black;
@@ -513,14 +533,14 @@ public:
         pawn ^= s;
         rook ^= t;
         us ^= st;
-        board[ti] += ('r'-'p') + board[si];
+        board[ti] = ('r'-'p') + board[si];
         board[si] = '.';
         break;
       case MOVE_P_PROMOTE_B:
         pawn ^= s;
         bishop ^= t;
         us ^= st;
-        board[ti] += ('b'-'p') + board[si];
+        board[ti] = ('b'-'p') + board[si];
         board[si] = '.';
         break;
       case MOVE_Q:
@@ -703,7 +723,7 @@ public:
       (bishopthreats(i, empty) & bishop) |
       (rookthreats(i, empty) & rook) |
       (queenthreats(i, empty) & queen) |
-      (pawnthreats(1UL << i, ~color) & pawn));
+      (pawnthreats(1UL << i, !color) & pawn));
   }
 
   std::vector<Move> legal_moves() {
@@ -715,61 +735,82 @@ public:
     Square oki = ntz(our_king);
     Bitboard empty = ~(us | them);
     Bitboard not_us = ~us;
-
     std::vector<Move> result;
 
-    auto add_if_legal = [&](Move m) {
-      // auto const& [si, ti, flags] = m;
+    if (us & them) {
+      std::cout << "us and them error\n";
+      std::cout << "us:\n" << Vizboard({us}) << "them:\n" << Vizboard({them}) << "\n";
 
-      std::cout << "ail us    1: " << std::bitset<64>(us) << "\n";
-      std::cout << "ail them  1: " << std::bitset<64>(them) << "\n";
-      std::cout << "ail flags 1: " << std::bitset<20>(m.flags) << "\n";
-      std::cout << "board     1: '";
-      for ( int k = 0; k<64;++k) std::cout << board[k];
-      std::cout << "'\n";
+      return result;
+    }
+
+    auto add_if_legal = [&](Move m) {
+
+      auto const& [si, ti, flags, ep, cr] = m;
+      // std::cout << "\n\n-----> add_if_legal. si = " << si << " ti = " << ti << "\n";
+      // std::cout << "s = " << (char)('a'+(si&7)) << (8-(si >> 3)) << "\n";
+      // std::cout << "t = " << (char)('a'+(ti&7)) << (8-(ti >> 3)) << "\n";
+      // std::cout << "board[si] = '" << board[si] << "' board[ti] = '" << board[ti] << "'\n";
+      // char piece = (board[si] > 'Z') ? board[si] - 32 : board[si];
+      // if (piece == 'P') {
+      //   if (flags&CAPTURED) {
+      //     piece = (char)('a'+(si&7));
+      //   } else {
+      //     piece = ' ';
+      //   }
+      // }
+      // std::cout << piece << ((flags&CAPTURED)?"x":"") << (char)('a'+(ti&7)) << (8-(ti >> 3)) << " ";
 
       playmove(m);
       auto oki = ntz(us & king);
       auto checkers = attackers(oki, color, us, them);
+      //std::cout << "\n  oki: " << oki << "\n";
+      //std::cout << "\n  color: " << (color ? "black" : "white") << "\n";
+      //std::cout << "\n  king   : " << std::bitset<64>(king) << "\n";
+      //std::cout << "\n  bish   : " << std::bitset<64>(bishop) << "\n";
+      //std::cout << "\n  us     : " << std::bitset<64>(us) << "\n";
+      //std::cout << "\n  them   : " << std::bitset<64>(them) << "\n";
+
+      //std::cout << "\n  bishatt: " << std::bitset<64>(bishopthreats(oki, empty)) << "\n";
+      auto empty = ~(us | them);
+      //std::cout << "\n  empty  : " << std::bitset<64>(empty) << "\n";
+      //std::cout << "\n  bmask  : " << std::bitset<64>(BISHOPMASK[oki]) << "\n";
+      //std::cout << "\n  ints   : " << std::bitset<64>(empty & BISHOPMASK[oki]) << "\n";
+      //std::cout << "\n  bcfh   : " << std::bitset<22>(bishopcollisionfreehash(oki, empty & BISHOPMASK[oki])) << "\n";
+      //std::cout << "\n  answ   : " << std::bitset<64>(BISHOPTHREATS[bishopcollisionfreehash(oki, empty & BISHOPMASK[oki])]) << "\n";
+      //BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])]
+      //
+      // 0100 0100
+      // 0010 1000
+      // 0000 0000
+      // 0010 1000
+      // 0100 0100
+      // 1000 0010
+      // 0000 0001
+
       if (checkers == 0) {
          result.push_back(m);
+         // std::cout << " ...accepted.\n";
        } else {
-
-         std::cout << "ail reject : " << m.s << " " << m.t << " " << std::bitset<20>(m.flags) << " " << std::bitset<64>(checkers) << "\n";
-         std::cout << "ail us    2: " << std::bitset<64>(us) << "\n";
-         std::cout << "ail them  2: " << std::bitset<64>(them) << "\n";
-         std::cout << "ail flags 2: " << std::bitset<20>(m.flags) << "\n";
-         std::cout << "ail color 2: " << (color ? "black" : "white") << "\n";
-         std::cout << "board     2: '";
-         for ( int k = 0; k<64;++k) std::cout << board[k];
-         std::cout << "'\n";
-
+         // std::cout << " ...rejected.\n";
        }
       undomove(m);
-
-      std::cout << "ail us    3: " << std::bitset<64>(us) << "\n";
-      std::cout << "ail them  3: " << std::bitset<64>(them) << "\n";
-      std::cout << "ail color 3: " << (color ? "black" : "white") << "\n";
-      std::cout << "board     3= '";
-      for ( int k = 0; k<64;++k) std::cout << board[k];
-      std::cout << "'\n";
-
     };
 
     auto add = [&](Square si, Bitboard T, MoveFlag flags){
-      std::cout << "ADD si = " << si << " T = " << std::bitset<64>(T) << "\n";
-      std::cout << "    flags = " << std::bitset<20>(flags) << "\n";
+      //std::cout << "ADD si = " << si << " T = " << std::bitset<64>(T) << "\n";
+      //std::cout << "    flags = " << std::bitset<20>(flags) << "\n";
       while (T) {
         auto t = ((T ^ (T - 1)) >> 1) + 1;
         T ^= t;
         auto ti = ntz(t);
-        std::cout << "add si = " << si << " " << "ti = " << ti << "\n";
+        std::cout << "\n--->Add si = " << si << " " << "ti = " << ti << "\n";
         std::cout << "board[si] = '" << board[si] << "'\n";
         std::cout << "board[ti] = '" << board[ti] << "'\n";
 
-        std::cout << "board    0: '";
-        for ( int k = 0; k<64;++k) std::cout << board[k];
-        std::cout << "'\n";
+
+        //for ( int k = 0; k<64;++k) std::cout << board[k];
+        //std::cout << "'\n";
 
         std::cout << "preflags  = " << std::bitset<20>(flags) << "\n";
         switch(board[ti]) {
@@ -811,28 +852,43 @@ public:
     };
 
     // Standard King Moves (castling comes later)
+    std::cout << "\n------------------\nKing moves.\n";
     add(oki, kingthreats(oki) & not_us, MOVE_K_STANDARD);
 
     // Queen Moves
+    std::cout << "\n------------------\nQueen moves.\n";
     auto S = queen & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
+      std::cout << "Q si = " << si << " board[si] = '" << board[si] << "\n";
+      // std::cout << "qb empty  = " << std::bitset<64>(empty) << "\n";
+      // std::cout << "qbthreats = " << std::bitset<64>(bishopthreats(si, empty)) << "\n";
+      // std::cout << "bmask     = \n" << std::bitset<64>(BISHOPMASK[si]) << "\n";
+      // std::cout << "bmask     = \n" << Vizboard({BISHOPMASK[si]}) << "\n";
+      // std::cout << "bmask&empt= " << std::bitset<64>(empty&BISHOPMASK[si]) << "\n";
+      // std::cout << "bcfh      = " << std::bitset<22>(bishopcollisionfreehash(si, empty & BISHOPMASK[si])) << "\n";
+      //BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])]
+      std::cout <<"\n----Queen/Rook:\n";
       add(si, rookthreats(si, empty) & not_us, MOVE_Q);
-      add(si, bishopthreats(si, empty) & not_us, MOVE_Q);
+      std::cout <<"\n----qUEEN/Bishpo:\n";
+       add(si, bishopthreats(si, empty) & not_us, MOVE_Q);
     }
 
     // Rook moves
+    std::cout << "\n------------------\nRook moves.\n";
     S = rook & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
+      std::cout << "R si = " << si << " board[si] = '" << board[si] << "\n";
       add(si, rookthreats(si, empty) & not_us, MOVE_R);
     }
 
     // Bishop moves
+    std::cout << "\n------------------\nBishop moves.\n";
     S = bishop & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
@@ -842,6 +898,7 @@ public:
     }
 
     // Knight moves
+    std::cout << "\n------------------\nKnight moves.\n";
     S = knight & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
@@ -850,17 +907,19 @@ public:
       add(si, knightthreats(si) & not_us, MOVE_N);
     }
 
-    // Pawn pushs
+    // Pawn pushes
+    std::cout << "\n------------------\nPawn pushes.\n";
     Bitboard our_pawns = pawn & us;
-    Square pp = color ? 8 : -8; // single pawn push offset
-    Bitboard T = (our_pawns << pp) & empty;
+    std::cout << "Pawn pushes. our_pawns = " << Vizboard({our_pawns}) << "\n";
+    //std::cout << "Pawn pushes. empty     = " << std::bitset<64>(empty) << "\n";
+    Bitboard T = empty & (color ? (our_pawns << 8) : (our_pawns >> 8));
+    std::cout << "Pawn pushes. T = " << Vizboard({T}) << "\n";
     while (T) {
       Bitboard t = ((T ^ (T - 1)) >> 1) + 1;
       T ^= t;
-      Bitboard s = t >> pp;
-      Square si = ntz(s);
-      Square ti = si + pp;
-
+      Square ti = ntz(t);
+      Square si = ti - (color ? 8 : -8);
+      //std::cout << "pawn push si = " << si << " ti =" << ti << "\n";
       if (t & endrank) {
         add_if_legal({si, ti, MOVE_P_PROMOTE_Q, enpassant_square, castling_rights});
         add_if_legal({si, ti, MOVE_P_PROMOTE_R, enpassant_square, castling_rights});
@@ -872,12 +931,18 @@ public:
     }
 
     // Pawn captures (except en passant)
+    std::cout << "\n------------------\nCaptures by pawns.\n";
     T = pawnthreats(our_pawns, color) & them;
+    // std::cout << "our_pawns   = \n" << Vizboard({our_pawns}) << "\n";
+    // std::cout << "pawnthreats = \n" << Vizboard({pawnthreats(our_pawns,color)}) << "\n";
+    // std::cout << "T           = \n" << Vizboard({T}) << "\n";
     while (T) {
       Bitboard t = ((T ^ (T - 1)) >> 1) + 1;
       T ^= t;
       Square ti = ntz(t);
-      S = pawnthreats(t, ~color) & our_pawns;
+      // std::cout << "ti = " << ti << "\n";
+      // std::cout << "S recip threat = \n" << Vizboard({pawnthreats(t, !color)}) << "\n";
+      S = pawnthreats(t, !color) & our_pawns;
       while (S) {
         Bitboard s = ((S ^ (S - 1)) >> 1) + 1;
         S ^= s;
@@ -894,21 +959,22 @@ public:
     }
 
     // Double Pawn pushes
-    Square dpp = 2*pp; // double pawn push offset
+    std::cout << "\n------------------\nPawn double pushes.\n";
     S = our_pawns & (color ? 0x000000000000FF00UL :
                              0x00FF000000000000UL);
-    T = (S << dpp) & (empty << pp) & empty;
+    T = empty & (color ? ((S << 16) & (empty << 8))
+                       : ((S >> 16) & (empty >> 8)));
     while (T) {
       Bitboard t = ((T ^ (T - 1)) >> 1) + 1;
       T ^= t;
-      Bitboard s = t >> dpp;
-      Square si = ntz(s);
-      Square ti = si + dpp;
+      Square ti = ntz(t);
+      Square si = ti - (color ? 16 : -16);
       add_if_legal({si, ti, MOVE_P_DOUBLEPUSH, enpassant_square, castling_rights});
     }
 
     // En Passant
-    S = pawnthreats(enpassant_square, ~color) & our_pawns;
+    std::cout << "\n------------------\nEn passant.\n";
+    S = pawnthreats(enpassant_square, !color) & our_pawns;
     while (S) {
       Bitboard s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
@@ -951,14 +1017,107 @@ public:
 int main(int argc, char * argv []) {
   ROOKTHREATS = computerookthreats();
   BISHOPTHREATS = computebishopthreats();
-  std::cout << "Tables computed.\n";
   auto board = Chess();
-  std::cout << "Chess object constructed.\n";
-  auto moves = board.legal_moves();
-  std::cout << "Legal moves computed.\n";
-  for (auto const& move : moves) {
-   std::cout << move.s << " " << move.t << " " << move.flags << "\n";
+  // auto moves = board.legal_moves();
+  // for (auto const& move : moves) {
+  //  std::cout << "{" << move.s << ", " << move.t << ", " << move.flags << ", " << move.ep << ", " << move.rights << "}\n";
+  // }
+  // board.playmove({57, 40, 65536, 0, 9295429630892703873UL});
+  // std::cout << "main: " << board.board << "\n";
+  // for (auto const& move : board.legal_moves()) {
+  //  std::cout << "{" << move.s << ", " << move.t << ", " << move.flags << ", " << move.ep << ", " << move.rights << "}\n";
+  // }
+  int cnt = 0;
+  while (cnt < 100) {
+
+    std::cout << "\n\n------------------\nIntegrity check 1\n\n";
+    for (int r = 0; r < 8; ++ r) {
+      for (int c = 0; c < 8; ++ c) {
+        std::cout << board.board[8*r+c] << " ";
+      }
+      std::cout << "\n";
+    }
+    std::cout << "white:\n" << Vizboard({board.white}) << "\nblack:\n" << Vizboard({board.black}) << "\n";
+    for (Square i = 0; i < 64; ++ i) {
+      uint64_t x = 1UL << i;
+      if (board.board[i] == '.') {
+        if (board.white & x) return 1;
+        if (board.black & x) return 1;
+      }
+      if (board.board[i] >= 'a' && board.board[i] <= 'z') {
+        if (board.white & x) return 1;
+        if (!(board.black & x)) return 1;
+      }
+      if (board.board[i] >= 'A' && board.board[i] <= 'Z') {
+        if (!(board.white & x)) return 1;
+        if ((board.black & x)) return 1;
+      }
+    }
+
+
+    std::cout << "Legal moves...\n";
+    auto moves = board.legal_moves();
+    if(moves.size() == 0) break;
+    for (auto move : moves) {
+      if (board.board[move.s] == '.') {
+        std::cout << "move error\n";
+        return 1;
+      }
+    }
+
+
+    std::cout << "\n\n------------------\nIntegrity check 2\n\n";
+    for (int r = 0; r < 8; ++ r) {
+      for (int c = 0; c < 8; ++ c) {
+        std::cout << board.board[8*r+c] << " ";
+      }
+      std::cout << "\n";
+    }
+    std::cout << "white:\n" << Vizboard({board.white}) << "\nblack:\n" << Vizboard({board.black}) << "\n";
+    for (Square i = 0; i < 64; ++ i) {
+      uint64_t x = 1UL << i;
+      if (board.board[i] == '.') {
+        if (board.white & x) return 1;
+        if (board.black & x) return 1;
+      }
+      if (board.board[i] >= 'a' && board.board[i] <= 'z') {
+        if (board.white & x) return 1;
+        if (!(board.black & x)) return 1;
+      }
+      if (board.board[i] >= 'A' && board.board[i] <= 'Z') {
+        if (!(board.white & x)) return 1;
+        if ((board.black & x)) return 1;
+      }
+    }
+
+    std::cout << "Playmove.\n";
+    auto move = moves[std::rand()%moves.size()];
+
+    std::cout << board.board[move.s] << (char)('a' + (move.t&7)) << (8-(move.t >> 3)) << "\n";
+    board.playmove(move);
+    std::cout << "Played Move.\n";
+    std::cout << "  si = " << move.s << "\n";
+    std::cout << "  ti = " << move.t << "\n";
+    std::cout << "  flags = " << std::bitset<20>(move.flags) << "\n";
+    if (move.flags & CAPTURE_P_STANDARD) {
+      std::cout << "  Pawn captured.\n";
+    }
+    if (move.flags & MOVE_Q) {
+      std::cout << "  Queen moved.\n";
+    }
+    std::cout << "New board: \n";
+    for (int r = 0; r < 8; ++ r) {
+      for (int c = 0; c < 8; ++ c) {
+        std::cout << board.board[8*r+c] << " ";
+      }
+      std::cout << "\n";
+    }
+    std::cout << "\n";
+    // std::cout << cnt << "\t" << board.board << "\n\n";
+    ++ cnt;
   }
-  std::cout << "Legal moves displayed.\n";
+  // for (auto const& move : board.legal_moves()) {
+  //  std::cout << "{" << move.s << ", " << move.t << ", " << move.flags << ", " << move.ep << ", " << move.rights << "}\n";
+  // }
   return 0;
 }
