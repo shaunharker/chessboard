@@ -419,7 +419,7 @@ public:
   }
 
   void
-  playmove(Move const& m) {
+  play(Move const& m) {
     auto const& [si, ti, flags, m_ep, m_cr] = m;
 
     bool color = ply & 1;
@@ -429,7 +429,7 @@ public:
     auto t = 1UL << ti;
     auto st = s | t;
     ply += 1;
-    enpassant_square &= color ? rank_3 : rank_6;
+    enpassant_square &= color ? rank_6 : rank_3;
     //
     switch (flags & CAPTURED) {
       case CAPTURE_P_STANDARD:
@@ -571,7 +571,7 @@ public:
     }
   }
 
-  void undomove(Move const& m) {
+  void undo(Move const& m) {
     auto const& [si, ti, flags, m_ep, m_cr] = m;
     ply -= 1;
     bool color = ply & 1;
@@ -761,7 +761,32 @@ public:
       // }
       // std::cout << piece << ((flags&CAPTURED)?"x":"") << (char)('a'+(ti&7)) << (8-(ti >> 3)) << " ";
 
-      playmove(m);
+      // std::cout << "\n\n------------------\nIntegrity check A\n\n";
+      // for (int r = 0; r < 8; ++ r) {
+      //   for (int c = 0; c < 8; ++ c) {
+      //     std::cout << board[8*r+c] << " ";
+      //   }
+      //   std::cout << "\n";
+      // }
+      // std::cout << "white:\n" << Vizboard({white}) << "\nblack:\n" << Vizboard({black}) << "\n";
+      // for (Square i = 0; i < 64; ++ i) {
+      //   uint64_t x = 1UL << i;
+      //   if (board[i] == '.') {
+      //     if (white & x) exit(1);
+      //     if (black & x) exit(1);
+      //   }
+      //   if (board[i] >= 'a' && board[i] <= 'z') {
+      //     if (white & x) exit(1);
+      //     if (!(black & x)) exit(1);
+      //   }
+      //   if (board[i] >= 'A' && board[i] <= 'Z') {
+      //     if (!(white & x)) exit(1);
+      //     if ((black & x)) exit(1);
+      //   }
+      // }
+
+
+      play(m);
       auto oki = ntz(us & king);
       auto checkers = attackers(oki, color, us, them);
       //std::cout << "\n  oki: " << oki << "\n";
@@ -794,7 +819,60 @@ public:
        } else {
          // std::cout << " ...rejected.\n";
        }
-      undomove(m);
+
+
+       // std::cout << "\n\n------------------\nIntegrity check B\n\n";
+       // for (int r = 0; r < 8; ++ r) {
+       //   for (int c = 0; c < 8; ++ c) {
+       //     std::cout << board[8*r+c] << " ";
+       //   }
+       //   std::cout << "\n";
+       // }
+       // std::cout << "white:\n" << Vizboard({white}) << "\nblack:\n" << Vizboard({black}) << "\n";
+       // for (Square i = 0; i < 64; ++ i) {
+       //   uint64_t x = 1UL << i;
+       //   if (board[i] == '.') {
+       //     if (white & x) exit(1);
+       //     if (black & x) exit(1);
+       //   }
+       //   if (board[i] >= 'a' && board[i] <= 'z') {
+       //     if (white & x) exit(1);
+       //     if (!(black & x)) exit(1);
+       //   }
+       //   if (board[i] >= 'A' && board[i] <= 'Z') {
+       //     if (!(white & x)) exit(1);
+       //     if ((black & x)) exit(1);
+       //   }
+       // }
+
+
+
+      undo(m);
+
+      // std::cout << "\n\n------------------\nIntegrity check B\n\n";
+      // for (int r = 0; r < 8; ++ r) {
+      //   for (int c = 0; c < 8; ++ c) {
+      //     std::cout << board[8*r+c] << " ";
+      //   }
+      //   std::cout << "\n";
+      // }
+      // std::cout << "white:\n" << Vizboard({white}) << "\nblack:\n" << Vizboard({black}) << "\n";
+      // for (Square i = 0; i < 64; ++ i) {
+      //   uint64_t x = 1UL << i;
+      //   if (board[i] == '.') {
+      //     if (white & x) exit(1);
+      //     if (black & x) exit(1);
+      //   }
+      //   if (board[i] >= 'a' && board[i] <= 'z') {
+      //     if (white & x) exit(1);
+      //     if (!(black & x)) exit(1);
+      //   }
+      //   if (board[i] >= 'A' && board[i] <= 'Z') {
+      //     if (!(white & x)) exit(1);
+      //     if ((black & x)) exit(1);
+      //   }
+      // }
+
     };
 
     auto add = [&](Square si, Bitboard T, MoveFlag flags){
@@ -804,15 +882,15 @@ public:
         auto t = ((T ^ (T - 1)) >> 1) + 1;
         T ^= t;
         auto ti = ntz(t);
-        std::cout << "\n--->Add si = " << si << " " << "ti = " << ti << "\n";
-        std::cout << "board[si] = '" << board[si] << "'\n";
-        std::cout << "board[ti] = '" << board[ti] << "'\n";
+        //std::cout << "\n--->Add si = " << si << " " << "ti = " << ti << "\n";
+        //std::cout << "board[si] = '" << board[si] << "'\n";
+        //std::cout << "board[ti] = '" << board[ti] << "'\n";
 
 
         //for ( int k = 0; k<64;++k) std::cout << board[k];
         //std::cout << "'\n";
 
-        std::cout << "preflags  = " << std::bitset<20>(flags) << "\n";
+        //std::cout << "preflags  = " << std::bitset<20>(flags) << "\n";
         switch(board[ti]) {
           case '.':
             add_if_legal({si, ti, flags, enpassant_square, castling_rights});
@@ -852,17 +930,17 @@ public:
     };
 
     // Standard King Moves (castling comes later)
-    std::cout << "\n------------------\nKing moves.\n";
+    //std::cout << "\n------------------\nKing moves.\n";
     add(oki, kingthreats(oki) & not_us, MOVE_K_STANDARD);
 
     // Queen Moves
-    std::cout << "\n------------------\nQueen moves.\n";
+    //std::cout << "\n------------------\nQueen moves.\n";
     auto S = queen & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
-      std::cout << "Q si = " << si << " board[si] = '" << board[si] << "\n";
+      //std::cout << "Q si = " << si << " board[si] = '" << board[si] << "\n";
       // std::cout << "qb empty  = " << std::bitset<64>(empty) << "\n";
       // std::cout << "qbthreats = " << std::bitset<64>(bishopthreats(si, empty)) << "\n";
       // std::cout << "bmask     = \n" << std::bitset<64>(BISHOPMASK[si]) << "\n";
@@ -870,25 +948,25 @@ public:
       // std::cout << "bmask&empt= " << std::bitset<64>(empty&BISHOPMASK[si]) << "\n";
       // std::cout << "bcfh      = " << std::bitset<22>(bishopcollisionfreehash(si, empty & BISHOPMASK[si])) << "\n";
       //BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])]
-      std::cout <<"\n----Queen/Rook:\n";
+      //std::cout <<"\n----Queen/Rook:\n";
       add(si, rookthreats(si, empty) & not_us, MOVE_Q);
-      std::cout <<"\n----qUEEN/Bishpo:\n";
-       add(si, bishopthreats(si, empty) & not_us, MOVE_Q);
+      //std::cout <<"\n----Queen/Bishop:\n";
+      add(si, bishopthreats(si, empty) & not_us, MOVE_Q);
     }
 
     // Rook moves
-    std::cout << "\n------------------\nRook moves.\n";
+    //std::cout << "\n------------------\nRook moves.\n";
     S = rook & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
-      std::cout << "R si = " << si << " board[si] = '" << board[si] << "\n";
+      //std::cout << "R si = " << si << " board[si] = '" << board[si] << "\n";
       add(si, rookthreats(si, empty) & not_us, MOVE_R);
     }
 
     // Bishop moves
-    std::cout << "\n------------------\nBishop moves.\n";
+    //std::cout << "\n------------------\nBishop moves.\n";
     S = bishop & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
@@ -898,7 +976,7 @@ public:
     }
 
     // Knight moves
-    std::cout << "\n------------------\nKnight moves.\n";
+    //std::cout << "\n------------------\nKnight moves.\n";
     S = knight & us;
     while (S) {
       auto s = ((S ^ (S - 1)) >> 1) + 1;
@@ -908,12 +986,12 @@ public:
     }
 
     // Pawn pushes
-    std::cout << "\n------------------\nPawn pushes.\n";
+    //std::cout << "\n------------------\nPawn pushes.\n";
     Bitboard our_pawns = pawn & us;
-    std::cout << "Pawn pushes. our_pawns = " << Vizboard({our_pawns}) << "\n";
+    //std::cout << "Pawn pushes. our_pawns = " << Vizboard({our_pawns}) << "\n";
     //std::cout << "Pawn pushes. empty     = " << std::bitset<64>(empty) << "\n";
     Bitboard T = empty & (color ? (our_pawns << 8) : (our_pawns >> 8));
-    std::cout << "Pawn pushes. T = " << Vizboard({T}) << "\n";
+    //std::cout << "Pawn pushes. T = " << Vizboard({T}) << "\n";
     while (T) {
       Bitboard t = ((T ^ (T - 1)) >> 1) + 1;
       T ^= t;
@@ -931,7 +1009,7 @@ public:
     }
 
     // Pawn captures (except en passant)
-    std::cout << "\n------------------\nCaptures by pawns.\n";
+    //std::cout << "\n------------------\nCaptures by pawns.\n";
     T = pawnthreats(our_pawns, color) & them;
     // std::cout << "our_pawns   = \n" << Vizboard({our_pawns}) << "\n";
     // std::cout << "pawnthreats = \n" << Vizboard({pawnthreats(our_pawns,color)}) << "\n";
@@ -959,7 +1037,7 @@ public:
     }
 
     // Double Pawn pushes
-    std::cout << "\n------------------\nPawn double pushes.\n";
+    // std::cout << "\n------------------\nPawn double pushes.\n";
     S = our_pawns & (color ? 0x000000000000FF00UL :
                              0x00FF000000000000UL);
     T = empty & (color ? ((S << 16) & (empty << 8))
@@ -973,16 +1051,19 @@ public:
     }
 
     // En Passant
-    std::cout << "\n------------------\nEn passant.\n";
+    //std::cout << "\n------------------\nEn passant.\n";
     S = pawnthreats(enpassant_square, !color) & our_pawns;
     while (S) {
       Bitboard s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       Square si = ntz(s);
+      //std::cout << "si = " << si << "\n";
+      //std::cout << "ti = " << ntz(enpassant_square) << "\n";
       add_if_legal({si, ntz(enpassant_square), EN_PASSANT, enpassant_square, castling_rights});
     }
 
     // Kingside Castle
+    //std::cout << "\n------------------\nKingside Castle.\n";
     if (castling_rights & (color ? (1UL << 7) : (1UL << 63))) {
       Bitboard conf = (color ? 240UL : (240UL << 56));
       if ((us & conf) == (color ? 144UL : (144UL << 56))) {
@@ -997,6 +1078,7 @@ public:
     }
 
     // Queenside Castle
+    //std::cout << "\n------------------\nQueenside Castle.\n";
     if (castling_rights & (color ? (1UL << 0) : (1UL << 56))) {
       auto conf = (color ? 31UL : (31UL << 56));
       if ((us & conf) == (color ? 17UL : (17UL << 56))) {
@@ -1009,113 +1091,164 @@ public:
         }
       }
     }
+    //std::cout << "\n------------------\n  legal moves done.\n--------\n";
 
     return result;
   }
 };
 
+
+uint64_t perft(Chess & board, int depth) {
+  if (depth == 0) return 1;
+  auto moves = board.legal_moves();
+  if (depth == 1) return moves.size();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    result += perft(board, depth-1);
+    board.undo(move);
+  }
+  return result;
+}
+
+uint64_t capturetest(Chess & board, int depth) {
+  if (depth == 0) return 0;
+  auto moves = board.legal_moves();
+  //if (depth == 1) return moves.size();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    if ((depth == 1) && (move.flags & CAPTURED)) result += 1;
+    result += capturetest(board, depth-1);
+    board.undo(move);
+  }
+  return result;
+}
+
+uint64_t enpassanttest(Chess & board, int depth) {
+  if (depth == 0) return 0;
+  auto moves = board.legal_moves();
+  //if (depth == 1) return moves.size();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    if ((depth == 1) && (move.flags & EN_PASSANT)) result += 1;
+    result += enpassanttest(board, depth-1);
+    board.undo(move);
+  }
+  return result;
+}
+
+
 int main(int argc, char * argv []) {
   ROOKTHREATS = computerookthreats();
   BISHOPTHREATS = computebishopthreats();
   auto board = Chess();
+  for (int depth = 0; depth < 10; ++ depth) {
+    std::cout << depth << ": " << perft(board, depth) << " " << capturetest(board, depth) << " " << enpassanttest(board, depth) << "\n";
+  }
   // auto moves = board.legal_moves();
   // for (auto const& move : moves) {
   //  std::cout << "{" << move.s << ", " << move.t << ", " << move.flags << ", " << move.ep << ", " << move.rights << "}\n";
   // }
-  // board.playmove({57, 40, 65536, 0, 9295429630892703873UL});
+  // board.play({57, 40, 65536, 0, 9295429630892703873UL});
   // std::cout << "main: " << board.board << "\n";
   // for (auto const& move : board.legal_moves()) {
   //  std::cout << "{" << move.s << ", " << move.t << ", " << move.flags << ", " << move.ep << ", " << move.rights << "}\n";
   // }
-  int cnt = 0;
-  while (cnt < 100) {
-
-    std::cout << "\n\n------------------\nIntegrity check 1\n\n";
-    for (int r = 0; r < 8; ++ r) {
-      for (int c = 0; c < 8; ++ c) {
-        std::cout << board.board[8*r+c] << " ";
-      }
-      std::cout << "\n";
-    }
-    std::cout << "white:\n" << Vizboard({board.white}) << "\nblack:\n" << Vizboard({board.black}) << "\n";
-    for (Square i = 0; i < 64; ++ i) {
-      uint64_t x = 1UL << i;
-      if (board.board[i] == '.') {
-        if (board.white & x) return 1;
-        if (board.black & x) return 1;
-      }
-      if (board.board[i] >= 'a' && board.board[i] <= 'z') {
-        if (board.white & x) return 1;
-        if (!(board.black & x)) return 1;
-      }
-      if (board.board[i] >= 'A' && board.board[i] <= 'Z') {
-        if (!(board.white & x)) return 1;
-        if ((board.black & x)) return 1;
-      }
-    }
-
-
-    std::cout << "Legal moves...\n";
-    auto moves = board.legal_moves();
-    if(moves.size() == 0) break;
-    for (auto move : moves) {
-      if (board.board[move.s] == '.') {
-        std::cout << "move error\n";
-        return 1;
-      }
-    }
+  // int cnt = 0;
+  // while (cnt < 10000000) {
+    // std::cout << "\n\n----------------\n PLY " << board.ply << "\n";
+    // std::cout << "\n\n------------------\nIntegrity check 1\n\n";
+    // for (int r = 0; r < 8; ++ r) {
+    //   for (int c = 0; c < 8; ++ c) {
+    //     std::cout << board.board[8*r+c] << " ";
+    //   }
+    //   std::cout << "\n";
+    // }
+    // std::cout << "white:\n" << Vizboard({board.white}) << "\nblack:\n" << Vizboard({board.black}) << "\n";
+    // for (Square i = 0; i < 64; ++ i) {
+    //   uint64_t x = 1UL << i;
+    //   if (board.board[i] == '.') {
+    //     if (board.white & x) return 1;
+    //     if (board.black & x) return 1;
+    //   }
+    //   if (board.board[i] >= 'a' && board.board[i] <= 'z') {
+    //     if (board.white & x) return 1;
+    //     if (!(board.black & x)) return 1;
+    //   }
+    //   if (board.board[i] >= 'A' && board.board[i] <= 'Z') {
+    //     if (!(board.white & x)) return 1;
+    //     if ((board.black & x)) return 1;
+    //   }
+    // }
 
 
-    std::cout << "\n\n------------------\nIntegrity check 2\n\n";
-    for (int r = 0; r < 8; ++ r) {
-      for (int c = 0; c < 8; ++ c) {
-        std::cout << board.board[8*r+c] << " ";
-      }
-      std::cout << "\n";
-    }
-    std::cout << "white:\n" << Vizboard({board.white}) << "\nblack:\n" << Vizboard({board.black}) << "\n";
-    for (Square i = 0; i < 64; ++ i) {
-      uint64_t x = 1UL << i;
-      if (board.board[i] == '.') {
-        if (board.white & x) return 1;
-        if (board.black & x) return 1;
-      }
-      if (board.board[i] >= 'a' && board.board[i] <= 'z') {
-        if (board.white & x) return 1;
-        if (!(board.black & x)) return 1;
-      }
-      if (board.board[i] >= 'A' && board.board[i] <= 'Z') {
-        if (!(board.white & x)) return 1;
-        if ((board.black & x)) return 1;
-      }
-    }
+    // std::cout << "Legal moves...\n";
+    // auto moves = board.legal_moves();
+    // if(moves.size() == 0) break;
+    // for (auto move : moves) {
+    //   if (board.board[move.s] == '.') {
+    //     std::cout << "move error\n";
+    //     return 1;
+    //   }
+    // }
 
-    std::cout << "Playmove.\n";
-    auto move = moves[std::rand()%moves.size()];
 
-    std::cout << board.board[move.s] << (char)('a' + (move.t&7)) << (8-(move.t >> 3)) << "\n";
-    board.playmove(move);
-    std::cout << "Played Move.\n";
-    std::cout << "  si = " << move.s << "\n";
-    std::cout << "  ti = " << move.t << "\n";
-    std::cout << "  flags = " << std::bitset<20>(move.flags) << "\n";
-    if (move.flags & CAPTURE_P_STANDARD) {
-      std::cout << "  Pawn captured.\n";
-    }
-    if (move.flags & MOVE_Q) {
-      std::cout << "  Queen moved.\n";
-    }
-    std::cout << "New board: \n";
-    for (int r = 0; r < 8; ++ r) {
-      for (int c = 0; c < 8; ++ c) {
-        std::cout << board.board[8*r+c] << " ";
-      }
-      std::cout << "\n";
-    }
-    std::cout << "\n";
+    // std::cout << "\n\n------------------\nIntegrity check 2\n\n";
+    // for (int r = 0; r < 8; ++ r) {
+    //   for (int c = 0; c < 8; ++ c) {
+    //     std::cout << board.board[8*r+c] << " ";
+    //   }
+    //   std::cout << "\n";
+    // }
+    // std::cout << "white:\n" << Vizboard({board.white}) << "\nblack:\n" << Vizboard({board.black}) << "\n";
+    // for (Square i = 0; i < 64; ++ i) {
+    //   uint64_t x = 1UL << i;
+    //   if (board.board[i] == '.') {
+    //     if (board.white & x) return 1;
+    //     if (board.black & x) return 1;
+    //   }
+    //   if (board.board[i] >= 'a' && board.board[i] <= 'z') {
+    //     if (board.white & x) return 1;
+    //     if (!(board.black & x)) return 1;
+    //   }
+    //   if (board.board[i] >= 'A' && board.board[i] <= 'Z') {
+    //     if (!(board.white & x)) return 1;
+    //     if ((board.black & x)) return 1;
+    //   }
+    // }
+
+    //std::cout << "Playmove.\n";
+    // auto move = moves[std::rand()%moves.size()];
+
+    // std::cout << board.board[move.s] << (char)('a' + (move.t&7)) << (8-(move.t >> 3)) << "\n";
+    // board.play(move);
+    // std::cout << "Played Move.\n";
+    // std::cout << "  si = " << move.s << "\n";
+    // std::cout << "  ti = " << move.t << "\n";
+    // std::cout << "  flags = " << std::bitset<20>(move.flags) << "\n";
+    // if (move.flags & CAPTURE_P_STANDARD) {
+    //   std::cout << "  Pawn captured.\n";
+    // }
+    // if (move.flags & MOVE_Q) {
+    //   std::cout << "  Queen moved.\n";
+    // }
+
+
+    // std::cout << "\n\n";
+    // for (int r = 0; r < 8; ++ r) {
+    //   for (int c = 0; c < 8; ++ c) {
+    //     std::cout << board.board[8*r+c] << " ";
+    //   }
+    //   std::cout << "\n";
+    // }
+    // std::cout << "\n";
+
+
     // std::cout << cnt << "\t" << board.board << "\n\n";
-    ++ cnt;
-  }
+  //   ++ cnt;
+  // }
   // for (auto const& move : board.legal_moves()) {
   //  std::cout << "{" << move.s << ", " << move.t << ", " << move.flags << ", " << move.ep << ", " << move.rights << "}\n";
   // }
