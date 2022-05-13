@@ -7,6 +7,7 @@
 #include <functional>
 #include <utility>
 #include <algorithm>
+#include <bitset>
 
 // non-lazy constexpr versions of range, map, and enumerate
 template <uint64_t N>
@@ -176,19 +177,30 @@ constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
   return (Y << 14) | (X << 6) | i;
 }
 
-constexpr std::array<Bitboard, (1 << 22)> computerookthreats(){
-  auto result = std::array<Bitboard, (1 << 22)>();
-  for (auto const& [i, x] : SquareBitboardRelation) {
+std::vector<Bitboard>
+computerookthreats(){
+  //std::cout << "crt. enter \n";
+  //std::cout.flush();
+  std::vector<Bitboard> result (1UL << 22);
+  //std::cout << "array ready to go.\n";
+  for (Square i = 0; i < 64; ++ i) {
+    Bitboard x = 1UL << i;
+    //std::cout << "crt loop. " << i << " " << x << "\n";
+    //std::cout.flush();
     auto const row = i >> 3;
     auto const col = i & 7;
     for (int k = 0x0000; k <= 0xFFFF; k += 0x0001) {
-      auto E = uint64_t(0);
+      Bitboard E = Bitboard(0);
       for (int d = 0; d < 8; ++d) {
         E |= (k & (1 << d)) ? (1UL << (8*row + d)) : 0;
       }
       for (int d = 0; d < 8; ++d) {
         E |= (k & (1 << (8+d))) ? (1UL << (8*d + col)) : 0;
       }
+      //if (k % 0x1000 == 0) {
+      //  std::cout << "k = " << k << "\n";
+      //  std::cout.flush();
+      //}
       // E is empty squares intersected with rook "+"-mask possibility
       auto idx = rookcollisionfreehash(i, E);
       for (auto f: {n, w, s, e}) {
@@ -204,11 +216,12 @@ constexpr std::array<Bitboard, (1 << 22)> computerookthreats(){
   return result;
 }
 
-constexpr std::array<Bitboard, (1 << 22)> ROOKTHREATS =
-  computerookthreats();
+std::vector<Bitboard> ROOKTHREATS; // = computerookthreats();
 
-constexpr std::array<Bitboard, (1 << 22)> computebishopthreats(){
-  auto result = std::array<Bitboard, (1 << 22)>();
+//std::array<Bitboard, (1 << 22)>
+std::vector<Bitboard>
+computebishopthreats(){
+  auto result = std::vector<Bitboard>(1 << 22);
   for (auto const& [i, x] : SquareBitboardRelation) {
     Square const row = i >> 3;
     Square const col = i & 7;
@@ -238,8 +251,7 @@ constexpr std::array<Bitboard, (1 << 22)> computebishopthreats(){
   return result;
 }
 
-constexpr std::array<Bitboard, (1 << 22)> BISHOPTHREATS =
-  computebishopthreats();
+std::vector<Bitboard> BISHOPTHREATS;
 
 constexpr std::array<Bitboard, 64> computeknightthreats(){
   auto result = std::array<Bitboard, 64>();
@@ -353,6 +365,8 @@ struct Move {  // 20 bytes
 };
 
 
+const char* initboard = "rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR";
+
 class Chess {
 private:
   Bitboard white;
@@ -370,7 +384,7 @@ private:
 
 public:
 
-  Chess() : board("rnbqkbnrpppppppp................PPPPPPPPRNBQKBNR") {
+  Chess() : board() {
     white =            0xFFFF000000000000;  // rank_1 | rank_2;
     black =            0x000000000000FFFF;  // rank_7 | rank_8;
     king =             0x1000000000000010;  // e1 | e8;
@@ -382,6 +396,7 @@ public:
     enpassant_square = 0x0000000000000000;  // behind double-pushed pawn
     castling_rights =  0x8100000000000081;  // a1 | a8 | h1 | h8
     ply = 0;
+    for (int k=0; k<64; ++k) board[k] = initboard[k];
   }
 
   void
@@ -705,17 +720,58 @@ public:
 
     auto add_if_legal = [&](Move m) {
       // auto const& [si, ti, flags] = m;
+
+      std::cout << "ail us    1: " << std::bitset<64>(us) << "\n";
+      std::cout << "ail them  1: " << std::bitset<64>(them) << "\n";
+      std::cout << "ail flags 1: " << std::bitset<20>(m.flags) << "\n";
+      std::cout << "board     1: '";
+      for ( int k = 0; k<64;++k) std::cout << board[k];
+      std::cout << "'\n";
+
       playmove(m);
       auto oki = ntz(us & king);
-      if (attackers(oki, color, us, them) == 0) result.push_back(m);
+      auto checkers = attackers(oki, color, us, them);
+      if (checkers == 0) {
+         result.push_back(m);
+       } else {
+
+         std::cout << "ail reject : " << m.s << " " << m.t << " " << std::bitset<20>(m.flags) << " " << std::bitset<64>(checkers) << "\n";
+         std::cout << "ail us    2: " << std::bitset<64>(us) << "\n";
+         std::cout << "ail them  2: " << std::bitset<64>(them) << "\n";
+         std::cout << "ail flags 2: " << std::bitset<20>(m.flags) << "\n";
+         std::cout << "ail color 2: " << (color ? "black" : "white") << "\n";
+         std::cout << "board     2: '";
+         for ( int k = 0; k<64;++k) std::cout << board[k];
+         std::cout << "'\n";
+
+       }
       undomove(m);
+
+      std::cout << "ail us    3: " << std::bitset<64>(us) << "\n";
+      std::cout << "ail them  3: " << std::bitset<64>(them) << "\n";
+      std::cout << "ail color 3: " << (color ? "black" : "white") << "\n";
+      std::cout << "board     3= '";
+      for ( int k = 0; k<64;++k) std::cout << board[k];
+      std::cout << "'\n";
+
     };
 
     auto add = [&](Square si, Bitboard T, MoveFlag flags){
+      std::cout << "ADD si = " << si << " T = " << std::bitset<64>(T) << "\n";
+      std::cout << "    flags = " << std::bitset<20>(flags) << "\n";
       while (T) {
         auto t = ((T ^ (T - 1)) >> 1) + 1;
         T ^= t;
         auto ti = ntz(t);
+        std::cout << "add si = " << si << " " << "ti = " << ti << "\n";
+        std::cout << "board[si] = '" << board[si] << "'\n";
+        std::cout << "board[ti] = '" << board[ti] << "'\n";
+
+        std::cout << "board    0: '";
+        for ( int k = 0; k<64;++k) std::cout << board[k];
+        std::cout << "'\n";
+
+        std::cout << "preflags  = " << std::bitset<20>(flags) << "\n";
         switch(board[ti]) {
           case '.':
             add_if_legal({si, ti, flags, enpassant_square, castling_rights});
@@ -893,10 +949,16 @@ public:
 };
 
 int main(int argc, char * argv []) {
+  ROOKTHREATS = computerookthreats();
+  BISHOPTHREATS = computebishopthreats();
+  std::cout << "Tables computed.\n";
   auto board = Chess();
+  std::cout << "Chess object constructed.\n";
   auto moves = board.legal_moves();
+  std::cout << "Legal moves computed.\n";
   for (auto const& move : moves) {
-    std::cout << move.s << " " << move.t << " " << move.flags << "\n";
+   std::cout << move.s << " " << move.t << " " << move.flags << "\n";
   }
+  std::cout << "Legal moves displayed.\n";
   return 0;
 }
