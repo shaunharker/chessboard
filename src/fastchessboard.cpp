@@ -6,6 +6,7 @@
 #include <array>
 #include <functional>
 #include <utility>
+#include <algorithm>
 
 // non-lazy constexpr versions of range, map, and enumerate
 template <uint64_t N>
@@ -55,16 +56,17 @@ constexpr auto squares = range<64>();
 // the least significant bit corresponds to the integer 0,
 // and so on.
 typedef uint64_t Bitboard;
-typedef uint8_t Square;
+typedef int Square;
 
 // The singleton Bitboards, representing the subset
 // consisting of one Square, can be constructed from
 // a Square via the power of two operation.
 constexpr auto twopow = [](Square x){
-  return Bitboard(1) << x;};
+  return Bitboard(1) << x;
+};
 
 constexpr Square ntz(Bitboard x) {
-  constexpr auto debruijn
+  constexpr std::array<Square,64> debruijn
       {0, 47,  1, 56, 48, 27,  2, 60,
       57, 49, 41, 37, 28, 16,  3, 61,
       54, 58, 35, 52, 50, 42, 21, 44,
@@ -73,7 +75,7 @@ constexpr Square ntz(Bitboard x) {
       34, 51, 20, 43, 31, 22, 10, 45,
       25, 39, 14, 33, 19, 30,  9, 24,
       13, 18,  8, 12,  7,  6,  5, 63};
-  return [(0x03f79d71b4cb0a89*(x^(x-1)))>>58];
+  return debruijn[(0x03f79d71b4cb0a89*(x^(x-1)))>>58];
 }
 
 
@@ -108,10 +110,6 @@ SliderMask(BoardOps... args) {
   return result;
 }
 
-constexpr auto ROOKMASK = SliderMask(n, s, w, e);
-constexpr auto BISHOPMASK = SliderMask(nw, sw, ne, se);
-
-
 // Special Bitboards
 constexpr Bitboard rank_8       = 0x00000000000000FFUL;
 constexpr Bitboard rank_6       = 0x0000000000FF0000UL;
@@ -134,43 +132,48 @@ constexpr auto nw(Bitboard x) -> Bitboard {return n(w(x));}
 constexpr auto ne(Bitboard x) -> Bitboard {return n(e(x));}
 constexpr auto sw(Bitboard x) -> Bitboard {return s(w(x));}
 constexpr auto se(Bitboard x) -> Bitboard {return s(e(x));}
-constexpr auto nwn(Bitboard x) -> Bitboard {return nw(n(x)));}
-constexpr auto nen(Bitboard x) -> Bitboard {return ne(n(x)));}
-constexpr auto sws(Bitboard x) -> Bitboard {return sw(s(x)));}
-constexpr auto ses(Bitboard x) -> Bitboard {return se(s(x)));}
-constexpr auto wnw(Bitboard x) -> Bitboard {return w(nw(x)));}
-constexpr auto ene(Bitboard x) -> Bitboard {return e(ne(x)));}
-constexpr auto wsw(Bitboard x) -> Bitboard {return w(sw(x)));}
-constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x)));}
+constexpr auto nwn(Bitboard x) -> Bitboard {return nw(n(x));}
+constexpr auto nen(Bitboard x) -> Bitboard {return ne(n(x));}
+constexpr auto sws(Bitboard x) -> Bitboard {return sw(s(x));}
+constexpr auto ses(Bitboard x) -> Bitboard {return se(s(x));}
+constexpr auto wnw(Bitboard x) -> Bitboard {return w(nw(x));}
+constexpr auto ene(Bitboard x) -> Bitboard {return e(ne(x));}
+constexpr auto wsw(Bitboard x) -> Bitboard {return w(sw(x));}
+constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x));}
+
+constexpr auto ROOKMASK = SliderMask(n, s, w, e);
+constexpr auto BISHOPMASK = SliderMask(nw, sw, ne, se);
+
+
 
 // Given a chessboard square i and the Bitboard of empty squares
 // on it's "+"-mask, this function determines those squares
 // a rook or queen is "attacking".
-constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {  //
+constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     // E is empty squares intersected with rook "+"-mask
     auto constexpr A = antidiagonal;
     auto constexpr T = rank_8;
     auto constexpr L = file_a;
     auto X = T & (E >> (i & 0b111000));  // 3
-    auto Y = modmul(A, L & (E >> (i & 0b000111))) >> 56;  // 5
+    auto Y = (A * (L & (E >> (i & 0b000111)))) >> 56;  // 5
     return (Y << 14) | (X << 6) | i; // 4
 }
 
 // Given a singleton bitboard x and the set of empty squares
 // on it's "x"-mask, this function packages that information
 // into a unique 22-bit key for lookup table access.
-constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {  //
+constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
   // E is empty squares intersected with bishop "X"-mask
-  auto row = i >> 3;  // 1
-  auto col = i & 7;  // 1
-  auto t = row - col;  // 1
-  auto t2 = row + col - 7 // 2
-  auto OD = diagonal >> t ; // 1
-  auto OA = antidiagonal << t2;  // 1
+  auto row = i >> 3;
+  auto col = i & 7;
+  auto t = row - col;
+  auto t2 = row + col - 7;
+  auto OD = (t > 0) ? (diagonal >> t) : (diagonal << -t);
+  auto OA = (t2 > 0) ? (antidiagonal << t2) : (antidiagonal >> -t2);
   auto constexpr L = file_a;
-  auto X = modmul(L, OA&E) >> 56;  // 3
-  auto Y = modmul(L, OD&E) >> 56;  // 3
-  return (Y << 14) | (X << 6) | i;  // 4
+  auto X = (L*(OA&E)) >> 56;
+  auto Y = (L*(OD&E)) >> 56;
+  return (Y << 14) | (X << 6) | i;
 }
 
 constexpr std::array<Bitboard, (1 << 22)> computerookthreats(){
@@ -187,7 +190,7 @@ constexpr std::array<Bitboard, (1 << 22)> computerookthreats(){
         E |= (k & (1 << (8+d))) ? (1UL << (8*d + col)) : 0;
       }
       // E is empty squares intersected with rook "+"-mask possibility
-      idx = rookcollisionfreehash(i, E);
+      auto idx = rookcollisionfreehash(i, E);
       for (auto f: {n, w, s, e}) {
         auto tmp = f(x);
         for (int d = 0; d < 8; ++d) {
@@ -207,20 +210,20 @@ constexpr std::array<Bitboard, (1 << 22)> ROOKTHREATS =
 constexpr std::array<Bitboard, (1 << 22)> computebishopthreats(){
   auto result = std::array<Bitboard, (1 << 22)>();
   for (auto const& [i, x] : SquareBitboardRelation) {
-    auto const row = i >> 3;
-    auto const col = i & 7;
-    auto const s = row+col;
-    auto const t = row-col;
+    Square const row = i >> 3;
+    Square const col = i & 7;
+    Square const s = row+col;
+    Square const t = row-col;
     for (int k = 0x0000; k <= 0xFFFF; k += 0x0001) {
-      auto E = uint64_t(0);
-      for (int d = 0; d < 8; ++d) {
+      Bitboard E = Bitboard(0);
+      for (int d = 0; d <= s; ++d) {
         E |= (k & (1 << d)) ? (1UL << (8*(s-d) + d)) : 0;
       }
-      for (int d = 0; d < 8; ++d) {
+      for (int d = std::max(-t, Square(0)); d < 8-t; ++d) {
         E |= (k & (1 << (8+d))) ? (1UL << (8*(t+d) + d)) : 0;
       }
       // E is empty squares intersected with bishop "x"-mask possibility
-      idx = bishopcollisionfreehash(i, E);
+      auto idx = bishopcollisionfreehash(i, E);
       for (auto f: {nw, ne,
                     sw, se}) {
         auto tmp = f(x);
@@ -273,7 +276,7 @@ Bitboard const& bishopthreats(Square i, Bitboard const& empty) {
   return BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])];
 }
 
-Bitboard const& queenthreats(Square i, Bitboard const& empty) {
+Bitboard queenthreats(Square i, Bitboard const& empty) {
   return ROOKTHREATS[rookcollisionfreehash(i, empty & ROOKMASK[i])] |
     BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])];
 }
@@ -344,9 +347,9 @@ constexpr MoveFlag EN_PASSANT = MOVE_P_EN_PASSANT | CAPTURE_P_EN_PASSANT;
 struct Move {  // 20 bytes
   Square s;
   Square t;
+  MoveFlag flags;
   Bitboard ep; // for reversibility
   Bitboard rights;
-  MoveFlag flags;
 };
 
 
@@ -371,11 +374,11 @@ public:
     white =            0xFFFF000000000000;  // rank_1 | rank_2;
     black =            0x000000000000FFFF;  // rank_7 | rank_8;
     king =             0x1000000000000010;  // e1 | e8;
-    bishop =           0x2400000000000024;  // c1 | c8 | f1 | f8;
-    rook =             0x8100000000000081;  // a1 | a8 | h1 | h8;
-    queen =            0x0800000000000008;  // d1 | d8
-    knight =           0x4200000000000042;  // b1 | b8 | g1 | g8;
     pawn =             0x00FF00000000FF00;  // rank_2 | rank_7
+    queen =            0x0800000000000008;  // d1 | d8
+    rook =             0x8100000000000081;  // a1 | a8 | h1 | h8;
+    bishop =           0x2400000000000024;  // c1 | c8 | f1 | f8;
+    knight =           0x4200000000000042;  // b1 | b8 | g1 | g8;
     enpassant_square = 0x0000000000000000;  // behind double-pushed pawn
     castling_rights =  0x8100000000000081;  // a1 | a8 | h1 | h8
     ply = 0;
@@ -385,8 +388,8 @@ public:
   playmove(Move const& m) {
     auto const& [si, ti, flags, m_ep, m_cr] = m;
     bool color = ply & 1;
-    Bitboard const& us = color ? black : white;
-    Bitboard const& them = color ? white : black;
+    Bitboard & us = color ? black : white;
+    Bitboard & them = color ? white : black;
     auto s = 1UL << si;
     auto t = 1UL << ti;
     auto st = s | t;
@@ -399,12 +402,14 @@ public:
         them ^= t;
         break;
       case CAPTURE_P_EN_PASSANT:
+      {
         auto ci = ti + (color ? -8 : 8);
         board[ci] = '.';
         auto captured = 1UL << ci;
         pawn ^= captured;
         them ^= captured;
         break;
+      }
       case CAPTURE_Q:
         queen ^= t;
         them ^= t;
@@ -441,7 +446,7 @@ public:
         castling_rights &= color ? rank_1 : rank_8;
         board[ti] = board[si];
         board[si] = '.';
-        board[si-1] = color ? "r" : "R";
+        board[si-1] = color ? 'r' : 'R';
         board[si-4] = '.';
         break;
       case MOVE_K_QUEENSIDE_CASTLE:
@@ -453,7 +458,7 @@ public:
         castling_rights &= color ? rank_1 : rank_8;
         board[ti] = board[si];
         board[si] = '.';
-        board[si+1] = color ? "r" : "R";
+        board[si+1] = color ? 'r' : 'R';
         board[si+3] = '.';
         break;
       case MOVE_P_STANDARD:
@@ -535,8 +540,8 @@ public:
     auto const& [si, ti, flags, m_ep, m_cr] = m;
     ply -= 1;
     bool color = ply & 1;
-    Bitboard const& us = color ? black : white;
-    Bitboard const& them = color ? white : black;
+    Bitboard & us = color ? black : white;
+    Bitboard & them = color ? white : black;
     auto s = 1UL << si;
     auto t = 1UL << ti;
     auto st = s | t;
@@ -575,6 +580,11 @@ public:
         board[si] = board[ti];
         break;
       case MOVE_P_DOUBLEPUSH:
+        pawn ^= st;
+        us ^= st;
+        board[si] = board[ti];
+        break;
+      case MOVE_P_EN_PASSANT:
         pawn ^= st;
         us ^= st;
         board[si] = board[ti];
@@ -632,13 +642,15 @@ public:
         board[ti] = color ? 'P' : 'p';
         break;
       case CAPTURE_P_EN_PASSANT:
+      {
         auto ci = ti + (color ? -8 : 8);
         board[ti] = '.';
         board[ci] = color ? 'P' : 'p';
         auto captured = 1UL << ci;
-        pawn ^= st | captured;
+        pawn ^= captured;
         them ^= captured;
         break;
+      }
       case CAPTURE_Q:
         queen ^= t;
         them ^= t;
@@ -684,14 +696,14 @@ public:
     Bitboard const& us = color ? black : white;
     Bitboard const& them = color ? white : black;
     Bitboard const& endrank = color ? rank_1 : rank_8;
-    auto our_king = king & us;
-    auto oki = ntz(our_king);
-    auto empty = ~(us | them);
-    auto not_us = ~us;
+    Bitboard our_king = king & us;
+    Square oki = ntz(our_king);
+    Bitboard empty = ~(us | them);
+    Bitboard not_us = ~us;
 
     std::vector<Move> result;
 
-    auto add_if_legal = [&](Move const& m) {
+    auto add_if_legal = [&](Move m) {
       // auto const& [si, ti, flags] = m;
       playmove(m);
       auto oki = ntz(us & king);
@@ -701,7 +713,7 @@ public:
 
     auto add = [&](Square si, Bitboard T, MoveFlag flags){
       while (T) {
-        t = ((T ^ (T - 1)) >> 1) + 1;
+        auto t = ((T ^ (T - 1)) >> 1) + 1;
         T ^= t;
         auto ti = ntz(t);
         switch(board[ti]) {
@@ -733,17 +745,16 @@ public:
             add_if_legal({si, ti, CAPTURE_N | flags, enpassant_square, castling_rights});
             break;
           case 'P':
-            add_if_legal({si, ti, CAPTURE_P | flags, enpassant_square, castling_rights});
+            add_if_legal({si, ti, CAPTURE_P_STANDARD | flags, enpassant_square, castling_rights});
             break;
           case 'p':
-            add_if_legal({si, ti, CAPTURE_P | flags, enpassant_square, castling_rights});
+            add_if_legal({si, ti, CAPTURE_P_STANDARD | flags, enpassant_square, castling_rights});
             break;
         }
       }
     };
 
     // Standard King Moves (castling comes later)
-    auto oki = ntz(our_king);
     add(oki, kingthreats(oki) & not_us, MOVE_K_STANDARD);
 
     // Queen Moves
@@ -752,8 +763,8 @@ public:
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
-      add(si, rookthreats(si) & not_us, MOVE_Q);
-      add(si, bishopthreats(si) & not_us, MOVE_Q);
+      add(si, rookthreats(si, empty) & not_us, MOVE_Q);
+      add(si, bishopthreats(si, empty) & not_us, MOVE_Q);
     }
 
     // Rook moves
@@ -762,7 +773,7 @@ public:
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
-      add(si, rookthreats(si) & not_us, MOVE_R);
+      add(si, rookthreats(si, empty) & not_us, MOVE_R);
     }
 
     // Bishop moves
@@ -771,7 +782,7 @@ public:
       auto s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
       auto si = ntz(s);
-      add(si, bishopthreats(si) & not_us, MOVE_B);
+      add(si, bishopthreats(si, empty) & not_us, MOVE_B);
     }
 
     // Knight moves
@@ -784,17 +795,17 @@ public:
     }
 
     // Pawn pushs
-    auto our_pawns = pawn & us;
-    int pp = color ? 8 : -8; // single pawn push offset
-    auto T = (our_pawns << pp) & empty;
+    Bitboard our_pawns = pawn & us;
+    Square pp = color ? 8 : -8; // single pawn push offset
+    Bitboard T = (our_pawns << pp) & empty;
     while (T) {
-      auto t = ((T ^ (T - 1)) >> 1) + 1;
+      Bitboard t = ((T ^ (T - 1)) >> 1) + 1;
       T ^= t;
-      auto s = t >> pp;
-      auto si = ntz(s);
-      auto ti = si + pp;
+      Bitboard s = t >> pp;
+      Square si = ntz(s);
+      Square ti = si + pp;
 
-      if (y & endrank) {
+      if (t & endrank) {
         add_if_legal({si, ti, MOVE_P_PROMOTE_Q, enpassant_square, castling_rights});
         add_if_legal({si, ti, MOVE_P_PROMOTE_R, enpassant_square, castling_rights});
         add_if_legal({si, ti, MOVE_P_PROMOTE_B, enpassant_square, castling_rights});
@@ -807,15 +818,15 @@ public:
     // Pawn captures (except en passant)
     T = pawnthreats(our_pawns, color) & them;
     while (T) {
-      auto t = ((T ^ (T - 1)) >> 1) + 1;
+      Bitboard t = ((T ^ (T - 1)) >> 1) + 1;
       T ^= t;
-      auto ti = ntz(t);
+      Square ti = ntz(t);
       S = pawnthreats(t, ~color) & our_pawns;
       while (S) {
-        s = ((S ^ (S - 1)) >> 1) + 1;
+        Bitboard s = ((S ^ (S - 1)) >> 1) + 1;
         S ^= s;
-        auto si = ntz(s);
-        if (y & endrank) {
+        Square si = ntz(s);
+        if (t & endrank) {
           add(si, t, MOVE_P_PROMOTE_Q);
           add(si, t, MOVE_P_PROMOTE_R);
           add(si, t, MOVE_P_PROMOTE_B);
@@ -827,37 +838,37 @@ public:
     }
 
     // Double Pawn pushes
-    auto dpp = pp << 1; // double pawn push offset
+    Square dpp = 2*pp; // double pawn push offset
     S = our_pawns & (color ? 0x000000000000FF00UL :
                              0x00FF000000000000UL);
     T = (S << dpp) & (empty << pp) & empty;
     while (T) {
-      auto t = ((T ^ (T - 1)) >> 1) + 1;
+      Bitboard t = ((T ^ (T - 1)) >> 1) + 1;
       T ^= t;
-      auto s = t >> dpp;
-      auto si = ntz(s);
-      auto ti = si + dpp;
-      add_if_legal({si, ti, DOUBLEPUSH, enpassant_square, castling_rights});
+      Bitboard s = t >> dpp;
+      Square si = ntz(s);
+      Square ti = si + dpp;
+      add_if_legal({si, ti, MOVE_P_DOUBLEPUSH, enpassant_square, castling_rights});
     }
 
     // En Passant
     S = pawnthreats(enpassant_square, ~color) & our_pawns;
     while (S) {
-      auto s = ((S ^ (S - 1)) >> 1) + 1;
+      Bitboard s = ((S ^ (S - 1)) >> 1) + 1;
       S ^= s;
-      auto si = ntz(s);
+      Square si = ntz(s);
       add_if_legal({si, ntz(enpassant_square), EN_PASSANT, enpassant_square, castling_rights});
     }
 
     // Kingside Castle
     if (castling_rights & (color ? (1UL << 7) : (1UL << 63))) {
-      auto conf = (color ? 240UL : (240UL << 56));
+      Bitboard conf = (color ? 240UL : (240UL << 56));
       if ((us & conf) == (color ? 144UL : (144UL << 56))) {
         if ((empty & conf) == (color ? 96UL : (96UL << 56))) {
-          if ((attackers(oki + 0, color, us, them) == 0) &&
-              (attackers(oki + 1, color, us, them) == 0) &&
-              (attackers(oki + 2, color, us, them) == 0)) {
-              result.push_back({oki, oki + 2, KINGSIDE_CASTLE, enpassant_square, castling_rights});
+          if ((attackers(oki + Square(0), color, us, them) == 0) &&
+              (attackers(oki + Square(1), color, us, them) == 0) &&
+              (attackers(oki + Square(2), color, us, them) == 0)) {
+              result.push_back({oki, oki + Square(2), MOVE_K_KINGSIDE_CASTLE, enpassant_square, castling_rights});
           }
         }
       }
@@ -868,10 +879,10 @@ public:
       auto conf = (color ? 31UL : (31UL << 56));
       if ((us & conf) == (color ? 17UL : (17UL << 56))) {
         if ((empty & conf) == (color ? 14UL : (14UL << 56))) {
-          if ((attackers(oki - 0, color, us, them) == 0) &&
-              (attackers(oki - 1, color, us, them) == 0) &&
-              (attackers(oki - 2, color, us, them) == 0)) {
-              result.push_back({oki, oki - 2, QUEENSIDE_CASTLE, enpassant_square, castling_rights});
+          if ((attackers(oki - Square(0), color, us, them) == 0) &&
+              (attackers(oki - Square(1), color, us, them) == 0) &&
+              (attackers(oki - Square(2), color, us, them) == 0)) {
+              result.push_back({oki, oki - Square(2), MOVE_K_QUEENSIDE_CASTLE, enpassant_square, castling_rights});
           }
         }
       }
