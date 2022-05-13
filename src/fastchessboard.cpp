@@ -505,7 +505,7 @@ public:
       case MOVE_P_DOUBLEPUSH:
         pawn ^= st;
         us ^= st;
-        enpassant_square = t << (color ? -8 : 8);
+        enpassant_square = color ? (t >> 8) : (t << 8);
         board[ti] = board[si];
         board[si] = '.';
         break;
@@ -714,16 +714,43 @@ public:
     castling_rights = m_cr;
   }
 
-  auto attackers (Square i, bool color, Bitboard const& us,
-    Bitboard const& them) -> Bitboard {
-    auto empty = ~(us | them);
-    return them & (
-      (kingthreats(i) & king) |
+
+  bool check() const {
+    bool color = ply & 1;
+    auto us = color ? black : white;
+    auto them = color ? white : black;
+    auto oki = ntz(king & us);
+    auto checkers = them & attackers(oki);
+    return (checkers != 0);
+  }
+
+  bool doublecheck() const {
+    bool color = ply & 1;
+    auto us = color ? black : white;
+    auto them = color ? white : black;
+    auto oki = ntz(king & us);
+    auto attack = them & attackers(oki);
+    attack &= ~(attack ^ (attack-1)); // remove lsb
+    return (attack != 0);
+  }
+
+  bool mate() {
+    bool color = ply & 1;
+    auto us = color ? black : white;
+    auto them = color ? white : black;
+    auto oki = ntz(king & us);
+    return ((attackers(oki) & them) != 0) && (legal_moves().size()==0);
+  }
+
+  auto attackers (Square i) const -> Bitboard {
+    auto empty = ~(white | black);
+    return (kingthreats(i) & king) |
       (knightthreats(i) & knight) |
       (bishopthreats(i, empty) & bishop) |
       (rookthreats(i, empty) & rook) |
       (queenthreats(i, empty) & queen) |
-      (pawnthreats(1UL << i, !color) & pawn));
+      (pawnthreats(1UL << i, true) & white & pawn) |
+      (pawnthreats(1UL << i, false) & black & pawn);
   }
 
   std::vector<Move> legal_moves() {
@@ -737,12 +764,12 @@ public:
     Bitboard not_us = ~us;
     std::vector<Move> result;
 
-    if (us & them) {
-      std::cout << "us and them error\n";
-      std::cout << "us:\n" << Vizboard({us}) << "them:\n" << Vizboard({them}) << "\n";
-
-      return result;
-    }
+    // if (us & them) {
+    //   std::cout << "us and them error\n";
+    //   std::cout << "us:\n" << Vizboard({us}) << "them:\n" << Vizboard({them}) << "\n";
+    //
+    //   return result;
+    // }
 
     auto add_if_legal = [&](Move m) {
 
@@ -788,7 +815,7 @@ public:
 
       play(m);
       auto oki = ntz(us & king);
-      auto checkers = attackers(oki, color, us, them);
+      auto checkers = them & attackers(oki);
       //std::cout << "\n  oki: " << oki << "\n";
       //std::cout << "\n  color: " << (color ? "black" : "white") << "\n";
       //std::cout << "\n  king   : " << std::bitset<64>(king) << "\n";
@@ -1068,10 +1095,11 @@ public:
       Bitboard conf = (color ? 240UL : (240UL << 56));
       if ((us & conf) == (color ? 144UL : (144UL << 56))) {
         if ((empty & conf) == (color ? 96UL : (96UL << 56))) {
-          if ((attackers(oki + Square(0), color, us, them) == 0) &&
-              (attackers(oki + Square(1), color, us, them) == 0) &&
-              (attackers(oki + Square(2), color, us, them) == 0)) {
-              result.push_back({oki, oki + Square(2), MOVE_K_KINGSIDE_CASTLE, enpassant_square, castling_rights});
+          if (((attackers(oki + Square(0)) & them) == 0) &&
+              ((attackers(oki + Square(1)) & them) == 0) &&
+              ((attackers(oki + Square(2)) & them) == 0)) {
+            result.push_back({oki, oki + Square(2),
+              MOVE_K_KINGSIDE_CASTLE, enpassant_square, castling_rights});
           }
         }
       }
@@ -1083,10 +1111,11 @@ public:
       auto conf = (color ? 31UL : (31UL << 56));
       if ((us & conf) == (color ? 17UL : (17UL << 56))) {
         if ((empty & conf) == (color ? 14UL : (14UL << 56))) {
-          if ((attackers(oki - Square(0), color, us, them) == 0) &&
-              (attackers(oki - Square(1), color, us, them) == 0) &&
-              (attackers(oki - Square(2), color, us, them) == 0)) {
-              result.push_back({oki, oki - Square(2), MOVE_K_QUEENSIDE_CASTLE, enpassant_square, castling_rights});
+          if (((attackers(oki - Square(0)) & them) == 0) &&
+              ((attackers(oki - Square(1)) & them) == 0) &&
+              ((attackers(oki - Square(2)) & them) == 0)) {
+            result.push_back({oki, oki - Square(2),
+              MOVE_K_QUEENSIDE_CASTLE, enpassant_square, castling_rights});
           }
         }
       }
@@ -1139,13 +1168,49 @@ uint64_t enpassanttest(Chess & board, int depth) {
   return result;
 }
 
+uint64_t checktest(Chess & board, int depth) {
+  if (depth == 0) return board.check() ? 1 : 0;
+  auto moves = board.legal_moves();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    result += checktest(board, depth-1);
+    board.undo(move);
+  }
+  return result;
+}
+
+uint64_t doublechecktest(Chess & board, int depth) {
+  if (depth == 0) return board.doublecheck() ? 1 : 0;
+  auto moves = board.legal_moves();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    result += doublechecktest(board, depth-1);
+    board.undo(move);
+  }
+  return result;
+}
+
+uint64_t matetest(Chess & board, int depth) {
+  if (depth == 0) return board.mate() ? 1 : 0;
+  auto moves = board.legal_moves();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    result += matetest(board, depth-1);
+    board.undo(move);
+  }
+  return result;
+}
+
 
 int main(int argc, char * argv []) {
   ROOKTHREATS = computerookthreats();
   BISHOPTHREATS = computebishopthreats();
   auto board = Chess();
   for (int depth = 0; depth < 10; ++ depth) {
-    std::cout << depth << ": " << perft(board, depth) << " " << capturetest(board, depth) << " " << enpassanttest(board, depth) << "\n";
+    std::cout << depth << ": " << perft(board, depth) << " " << capturetest(board, depth) << " " << enpassanttest(board, depth) << " " << checktest(board, depth) << " " << doublechecktest(board, depth) << " " << matetest(board, depth) << "\n";
   }
   // auto moves = board.legal_moves();
   // for (auto const& move : moves) {
