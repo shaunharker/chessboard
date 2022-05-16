@@ -6,7 +6,7 @@
 #include <array>
 #include <iostream>
 
-template <typename T> T sqr(T x) {return x*x;}
+template <typename T> constexpr T sqr(T x) {return x*x;}
 
 constexpr std::array<char,7>
   SS {'.','P','N','B','R','Q','K'};
@@ -23,36 +23,36 @@ struct ThreeByteMove {
   // 0x02 - 0x04 | cpi | capture pi .PNBRQK
   // 0x01        | qcr | change queen castling rights
   // 0x00        | kcr | change king castling rights
-  ThreeByteMove (uint32_t X):X(X){};
-  bool c() const {return X & 0x800000;}
-  uint8_t spi() const {return (X >> 0x14) & 0x07;}
-  uint8_t si() const  {return (X >> 0x0E) & 0x3F;}
-  uint8_t ti() const  {return (X >> 0x08) & 0x3F;}
-  uint8_t tpi() const {return (X >> 0x05) & 0x07;}
-  uint8_t cpi() const {return (X >> 0x02) & 0x07;}
-  bool qcr() const {return X & 0x02;}
-  bool kcr() const {return X & 0x01;}
+  constexpr ThreeByteMove (uint32_t X):X(X){};
+  constexpr bool c() const {return X & 0x800000;}
+  constexpr uint8_t spi() const {return (X >> 0x14) & 0x07;}
+  constexpr uint8_t si() const  {return (X >> 0x0E) & 0x3F;}
+  constexpr uint8_t ti() const  {return (X >> 0x08) & 0x3F;}
+  constexpr uint8_t tpi() const {return (X >> 0x05) & 0x07;}
+  constexpr uint8_t cpi() const {return (X >> 0x02) & 0x07;}
+  constexpr bool qcr() const {return X & 0x02;}
+  constexpr bool kcr() const {return X & 0x01;}
 
   // queries
-  uint8_t sr() const {return si() >> 3;}
-  uint8_t sc() const {return si() & 0x07;}
-  uint8_t tr() const {return ti() >> 3;}
-  uint8_t tc() const {return ti() & 0x07;}
-  char srk() const {return '8'-sr();}
-  char sf() const {return 'a'+sc();}
-  char trk() const {return '8'-tr();}
-  char tf() const {return 'a'+tc();}
-  bool pr() const {return spi() != tpi();}
-  char sp() const {return SS[spi()];}
-  char tp() const {return SS[tpi()];}
-  char cp() const {return SS[cpi()];}
-  bool ep() const {return sp() == 'P' &&
+  constexpr uint8_t sr() const {return si() >> 3;}
+  constexpr uint8_t sc() const {return si() & 0x07;}
+  constexpr uint8_t tr() const {return ti() >> 3;}
+  constexpr uint8_t tc() const {return ti() & 0x07;}
+  constexpr char srk() const {return '8'-sr();}
+  constexpr char sf() const {return 'a'+sc();}
+  constexpr char trk() const {return '8'-tr();}
+  constexpr char tf() const {return 'a'+tc();}
+  constexpr bool pr() const {return spi() != tpi();}
+  constexpr char sp() const {return SS[spi()];}
+  constexpr char tp() const {return SS[tpi()];}
+  constexpr char cp() const {return SS[cpi()];}
+  constexpr bool ep() const {return sp() == 'P' &&
     (sc() != tc()) && cp() == '.';}
-  bool x() const {return (cp() != '.') || ep();}
+  constexpr bool x() const {return (cp() != '.') || ep();}
   // uint16_t to_u16() const {return twobyte[X];}
   // void from_u16(uint16_t x){X=threebyte[x]);}
 
-  bool feasible() const {
+  constexpr bool feasible() const {
 
     bool white = !c();
 
@@ -259,7 +259,34 @@ struct ThreeByteMove {
 
 };
 
-int main(int arc, char * argv []) {
+
+constexpr std::array<uint32_t,44296>
+compute_move_table() {
+  std::array<uint32_t,44296> result {};
+  uint16_t j = 0;
+  for ( uint32_t i = 0; i < 256*256*256; ++i) {
+    ThreeByteMove tbm(i);
+    if (tbm.feasible()) {
+      result[j]=i;
+      ++j;
+    }
+  }
+  return result;
+}
+
+constexpr auto MOVETABLE = compute_move_table();
+
+constexpr std::array<uint16_t,16777216>
+compute_lookup_table() {
+  std::array<uint16_t,16777216> result {};
+  int i = 0;
+  for (uint32_t x : MOVETABLE) result[x] = i++;
+  return result;
+}
+
+constexpr auto LOOKUP = compute_lookup_table();
+
+void moves_csv_to_stdout() {
   uint32_t cnt = 0;
   uint32_t pcnt = 0;
   uint32_t ncnt = 0;
@@ -294,13 +321,21 @@ int main(int arc, char * argv []) {
   std::cerr << "B " << bcnt << "\n";
   std::cerr << "Q " << qcnt << "\n";
   std::cerr << "K " << kcnt << "\n";
-  return 0;
+  // 44295 total
+  // here's the breakdown:
+  // P: (8+(8+14*5)*5+(8*4+14*4*4))*2+28+16 == 1352
+  // N: ((2*4+3*8+4*16)+(4*4+6*16)+8*16)*2*6-2*4*2-3*4*2-4*8*2+8-2 == 3934
+  // R: (8*5+6*6)*32+48*(2*5+12*6)*2+(3*5+6*6)*2+(4*5+6*6)*2+(7+8)*2 == 10548
+  // B: (7*28+9*20+11*12+13*4)*2*6-7*32+28 == 6524
+  // Q: (21*28+23*20+25*12+27*4)*6*2-21*16*2+21*4-11*2 == 16862
+  // K: (3*4+5*24+8*36)*6*2-(3*4+5*12)*2+8+4+(3*6+2*5)*2*3 == 5076
 }
 
-// here's the breakdown:
-// P: (8+(8+14*5)*5+(8*4+14*4*4))*2 + 28 + 16 == 1352
-// N: ((2*4+3*8+4*16)+(4*4 + 6*16)+8*16)*2*6 - 2*4*2 - 3*4*2 - 4*8*2 + 8 - 2 == 3934
-// R: (8*5+6*6)*32 + 48*(2*5+12*6)*2 + (3*5+6*6)*2 + (4*5+6*6)*2 + (7+8)*2 == 6524
-// B: (7*28+9*20+11*12+13*4)*2*6-7*32+28 = 3934
-// Q: (21*28+23*20+25*12+27*4)*6*2 - 21*16*2 + 21*4 - 11*2 = 16862
-// K: (3*4+5*24+8*36)*6*2-(3*4+5*12)*2 + 8 + 4 + (3*6+2*5)*2*3 = 5076
+int main(int argc, char * argv []) {
+  for (int i = 0; i < MOVETABLE.size(); ++ i) {
+    if (LOOKUP[MOVETABLE[i]] != i) {
+      std::cerr << "Error at " << i << "\n";
+    }
+  }
+  return 0;
+}
