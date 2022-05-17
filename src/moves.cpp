@@ -198,7 +198,7 @@ struct ThreeByteMove {
             // pawns stay on file when not capturing,
             // and move over one file when capturing.
             // i) can't move over more than one file
-            if (sqr(sc()) + sqr(tc()) > 1 + 2*sc()*tc()) return false;
+            if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) return false;
             // ii) can't capture forward
             if ((sc() == tc()) && (cp() != '.')) return false;
             // iii) can't move diagonal without capture
@@ -275,7 +275,7 @@ struct ThreeByteMove {
           if ((cp() == 'R') && kcr() && (trk() == (white ? '8' : '1')) && (tf() == 'h') && !((srk() == (white ? '7' : '2')) && (sf() == 'g'))) return false;
           if ((cp() == 'R') && qcr() && (trk() == (white ? '8' : '1')) && (tf() == 'a') && !((srk() == (white ? '7' : '2')) && (sf() == 'b'))) return false;
           // castling cannot capture, must be properly positioned
-          if ((sqr(sc()) + sqr(tc()) > 1 + 2*sc()*tc())) {
+          if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) {
               if (!((tf() == 'g') && kcr()) && !((tf() == 'c') && qcr())) return false;
               if (cp() != '.') return false;
               if (sf() != 'e') return false;
@@ -283,10 +283,11 @@ struct ThreeByteMove {
               if (trk() != (white ? '1' : '8')) return false;
           }
           // kings move to neighboring squares
-          if ((sqr(sc()) + sqr(tc()) + sqr(sr()) + sqr(tr()) >
-                  2*(1 + sc()*tc() + sr()*tr())) &&
-                  !((sc() == 4) && (sr() == (white ? 7 : 0)) && (tr()==sr()) &&
-                      (((tc()==2) && qcr()) || ((tc()==6) && kcr())))) return false;
+          if (((sc()*sc() + tc()*tc() + sr()*sr()) + tr()*tr() >
+              2*(1 + sc()*tc() + sr()*tr())) && !((sc() == 4) &&
+              (sr() == (white ? 7 : 0)) && (tr()==sr()) &&
+              (((tc()==2) && qcr()) || ((tc()==6) && kcr()))))
+              return false;
       }
 
 
@@ -342,29 +343,43 @@ struct ThreeByteMove {
 };
 
 
-constexpr std::array<ThreeByteMove,44296>
+std::array<ThreeByteMove,44304>
 compute_move_table() {
-    std::array<ThreeByteMove,44296> result {};
+    std::array<ThreeByteMove,44304> result {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
         auto tbm = ThreeByteMove(i);
+        if (j == 44305) std::cerr << "MOVETABLE ERROR 1\n";
         if (tbm.feasible()) result[j++] = tbm;
     }
+    if (j != 44304) std::cerr << "MOVETABLE ERROR 2\n";
     return result;
 }
 
-constexpr std::array<uint16_t,16777216> compute_lookup_table() {
+std::array<uint16_t,16777216> compute_lookup_table() {
     // to make this independent from compute_move_table()
-    // we simply recompute it here. it's all compiler time
-    // anyway.
-    std::array<uint32_t,44296> movetable {};
+    // we simply recompute it here.
+    std::array<uint32_t,44304> movetable {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
-        if (ThreeByteMove(i).feasible()) movetable[j++] = i;
+        auto tbm = ThreeByteMove(i);
+        if (j == 44305) {
+          std::cerr << "LOOKUP ERROR 1\n";
+          break;
+        }
+        if (tbm.feasible()) movetable[j++] = i;
     }
+    //std::cout << j << "\n";
     std::array<uint16_t,16777216> result {};
-    int i = 0;
-    for (uint32_t x : movetable) result[x] = i++;
+    j = 0;
+    for (uint32_t i : movetable) {
+      if (i < 16777216) {
+        result[i] = j++;
+      } else {
+        std::cout << "clt error " << i << j << "\n";
+      }
+    }
+    //std::cout << j << "\n";
     return result;
 }
 
@@ -439,15 +454,15 @@ struct Position {
         knight = 0x4200000000000042; // b1 | b8 | g1 | g8;
         rights = 0x00; // move, castling rights
     }
-    bool c() const {return rights & 1;}
-    bool wkcr() const {return rights & 2;}
-    bool wqcr() const {return rights & 4;}
-    bool bkcr() const {return rights & 8;}
-    bool bqcr() const {return rights & 16;}
+    constexpr bool c() const {return rights & 1;}
+    constexpr bool wkcr() const {return rights & 2;}
+    constexpr bool wqcr() const {return rights & 4;}
+    constexpr bool bkcr() const {return rights & 8;}
+    constexpr bool bqcr() const {return rights & 16;}
 };
 
-std::array<ThreeByteMove,44296> MOVETABLE {};
-std::array<uint16_t,16777216> LOOKUP {};
+std::array<ThreeByteMove,44304> MOVETABLE = compute_move_table();
+std::array<uint16_t,16777216> LOOKUP = compute_lookup_table();
 
 void playcode(Position & P, uint16_t n) {
     auto const& tbm = MOVETABLE[n];
@@ -544,29 +559,43 @@ void playcode(Position & P, uint16_t n) {
 
 }
 
-#include "dispatcher.hpp"
+//#include "dispatcher.hpp"
 
-template<uint16_t n>
-struct PlayFun {
-    typedef Position input_t;
-    static void dispatch(input_t & t) {
-        playcode(t, n);
-    }
-};
+// template<uint16_t n>
+// struct PlayFun {
+//     typedef Position input_t;
+//     static void dispatch(input_t & t) {
+//         playcode(t, n);
+//     }
+// };
 
 void play(Position & P, ThreeByteMove tbm) {
     uint16_t n = LOOKUP[tbm.X];
-    dispatcher<PlayFun>(P, n);
+    playcode(P, n);
 }
 
 int main(int argc, char * argv []) {
-    compute_move_table();
-    compute_lookup_table();
-    // for (int i = 0; i < MOVETABLE.size(); ++ i) {
-    //     if (LOOKUP[MOVETABLE[i].X] != i) {
-    //         std::cerr << "Error at " << i << "\n";
-    //     }
+    //std::cout << "compute_move_table\n";
+    //MOVETABLE = compute_move_table();
+    //std::cout << "compute_lookup_table\n";
+    //LOOKUP = std::array<uint16_t,16777216>();//compute_lookup_table();
+
+    // move count test (44304)
+    // uint16_t j = 0;
+    // for (uint32_t i = 0; i < 256*256*256; ++i) {
+    //     auto tbm = ThreeByteMove(i);
+    //     if (tbm.feasible()) ++j;//result[j++] = tbm;
     // }
-    std::cout << MOVETABLE[500].X << " " << MOVETABLE.size() << "\n";
+    // std::cout << j << "\n";
+
+    std::cout << "Move application rate test.\n";
+
+    Position P;
+    for (int x = 0; x < 10000; ++ x) {
+      for (uint16_t code = 0; code < 44304; ++ code) {
+        play(P, MOVETABLE[code]);
+      }
+    }
+
     return 0;
 }
