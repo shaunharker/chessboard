@@ -343,90 +343,6 @@ struct ThreeByteMove {
 };
 
 
-std::array<ThreeByteMove,44304>
-compute_move_table() {
-    std::array<ThreeByteMove,44304> result {};
-    uint16_t j = 0;
-    for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = ThreeByteMove(i);
-        if (j == 44305) std::cerr << "MOVETABLE ERROR 1\n";
-        if (tbm.feasible()) result[j++] = tbm;
-    }
-    if (j != 44304) std::cerr << "MOVETABLE ERROR 2\n";
-    return result;
-}
-
-std::array<uint16_t,16777216> compute_lookup_table() {
-    // to make this independent from compute_move_table()
-    // we simply recompute it here.
-    std::array<uint32_t,44304> movetable {};
-    uint16_t j = 0;
-    for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = ThreeByteMove(i);
-        if (j == 44305) {
-          std::cerr << "LOOKUP ERROR 1\n";
-          break;
-        }
-        if (tbm.feasible()) movetable[j++] = i;
-    }
-    //std::cout << j << "\n";
-    std::array<uint16_t,16777216> result {};
-    j = 0;
-    for (uint32_t i : movetable) {
-      if (i < 16777216) {
-        result[i] = j++;
-      } else {
-        std::cout << "clt error " << i << j << "\n";
-      }
-    }
-    //std::cout << j << "\n";
-    return result;
-}
-
-void moves_csv_to_stdout() {
-    uint32_t cnt = 0;
-    uint32_t pcnt = 0;
-    uint32_t ncnt = 0;
-    uint32_t rcnt = 0;
-    uint32_t bcnt = 0;
-    uint32_t qcnt = 0;
-    uint32_t kcnt = 0;
-    std::cout << "turn, sp, sf, srk, tp, tf, trk, cp, kcr, qcr\n";
-    for ( uint32_t i = 0; i < 256*256*256; ++i) {
-        ThreeByteMove tbm(i);
-        if (tbm.feasible()) {
-            std::cout << (tbm.c() ? '1' : '0') << ", " << tbm.sp() << ", " <<
-                tbm.sf() << ", " << tbm.srk() << ", " << tbm.tp() << ", " <<
-                tbm.tf() << ", " << tbm.trk() << ", " <<
-                tbm.cp() << ", " << (tbm.kcr() ? '1' : '0') << ", " <<
-                (tbm.qcr() ? '1' : '0') << "\n";
-            ++ cnt;
-            switch(tbm.sp()){
-                case 'P': ++pcnt; break;
-                case 'N': ++ncnt; break;
-                case 'R': ++rcnt; break;
-                case 'B': ++bcnt; break;
-                case 'Q': ++qcnt; break;
-                case 'K': ++kcnt; break;
-            }
-        }
-    }
-    std::cerr << cnt << "\n";
-    std::cerr << "P " << pcnt << "\n";
-    std::cerr << "N " << ncnt << "\n";
-    std::cerr << "R " << rcnt << "\n";
-    std::cerr << "B " << bcnt << "\n";
-    std::cerr << "Q " << qcnt << "\n";
-    std::cerr << "K " << kcnt << "\n";
-    // 44295 total
-    // here's the breakdown:
-    // P: (8+(8+14*5)*5+(8*4+14*4*4))*2+28+16 == 1352
-    // N: ((2*4+3*8+4*16)+(4*4+6*16)+8*16)*2*6-2*4*2-3*4*2-4*8*2+8-2 == 3934
-    // R: (8*5+6*6)*32+48*(2*5+12*6)*2+(3*5+6*6)*2+(4*5+6*6)*2+(7+8)*2 == 10548
-    // B: (7*28+9*20+11*12+13*4)*2*6-7*32+28 == 6524
-    // Q: (21*28+23*20+25*12+27*4)*6*2-21*16*2+21*4-11*2 == 16862
-    // K: (3*4+5*24+8*36)*6*2-(3*4+5*12)*2+8+4+(3*6+2*5)*2*3 == 5076
-}
 
 typedef uint64_t Bitboard;
 typedef uint8_t Square;
@@ -461,11 +377,8 @@ struct Position {
     constexpr bool bqcr() const {return rights & 16;}
 };
 
-std::array<ThreeByteMove,44304> MOVETABLE = compute_move_table();
-std::array<uint16_t,16777216> LOOKUP = compute_lookup_table();
 
-void playcode(Position & P, uint16_t n) {
-    auto const& tbm = MOVETABLE[n];
+void play(Position & P, ThreeByteMove const& tbm) {
     auto c = tbm.c();
     auto si = tbm.si();
     auto ti = tbm.ti();
@@ -559,43 +472,109 @@ void playcode(Position & P, uint16_t n) {
 
 }
 
-//#include "dispatcher.hpp"
-
-// template<uint16_t n>
-// struct PlayFun {
-//     typedef Position input_t;
-//     static void dispatch(input_t & t) {
-//         playcode(t, n);
-//     }
-// };
-
-void play(Position & P, ThreeByteMove tbm) {
-    uint16_t n = LOOKUP[tbm.X];
-    playcode(P, n);
+std::array<ThreeByteMove,44304>
+compute_move_table() {
+    std::array<ThreeByteMove,44304> result {};
+    uint16_t j = 0;
+    for (uint32_t i = 0; i < 256*256*256; ++i) {
+        auto tbm = ThreeByteMove(i);
+        if (tbm.feasible()) result[j++] = tbm;
+    }
+    return result;
 }
 
-int main(int argc, char * argv []) {
-    //std::cout << "compute_move_table\n";
-    //MOVETABLE = compute_move_table();
-    //std::cout << "compute_lookup_table\n";
-    //LOOKUP = std::array<uint16_t,16777216>();//compute_lookup_table();
-
-    // move count test (44304)
-    // uint16_t j = 0;
-    // for (uint32_t i = 0; i < 256*256*256; ++i) {
-    //     auto tbm = ThreeByteMove(i);
-    //     if (tbm.feasible()) ++j;//result[j++] = tbm;
-    // }
-    // std::cout << j << "\n";
-
-    std::cout << "Move application rate test.\n";
-
-    Position P;
-    for (int x = 0; x < 10000; ++ x) {
-      for (uint16_t code = 0; code < 44304; ++ code) {
-        play(P, MOVETABLE[code]);
+std::array<uint16_t,16777216>
+compute_lookup_table() {
+    // to make this independent from compute_move_table()
+    // we simply recompute it here.
+    std::array<uint32_t,44304> movetable {};
+    uint16_t j = 0;
+    for (uint32_t i = 0; i < 256*256*256; ++i) {
+        auto tbm = ThreeByteMove(i);
+        if (tbm.feasible()) movetable[j++] = i;
+    }
+    std::array<uint16_t,16777216> result {};
+    j = 0;
+    for (uint32_t i : movetable) {
+      if (i < 16777216) {
+        result[i] = j++;
       }
     }
+    return result;
+}
+
+std::array<ThreeByteMove,44304> MOVETABLE = compute_move_table();
+std::array<uint16_t,16777216> LOOKUP = compute_lookup_table();
+
+void moves_csv_to_stdout() {
+    uint32_t cnt = 0;
+    uint32_t pcnt = 0;
+    uint32_t ncnt = 0;
+    uint32_t rcnt = 0;
+    uint32_t bcnt = 0;
+    uint32_t qcnt = 0;
+    uint32_t kcnt = 0;
+    std::cout << "turn, sp, sf, srk, tp, tf, trk, cp, kcr, qcr\n";
+    for ( uint32_t i = 0; i < 256*256*256; ++i) {
+        ThreeByteMove tbm(i);
+        if (tbm.feasible()) {
+            std::cout << (tbm.c() ? '1' : '0') << ", " << tbm.sp() << ", " <<
+                tbm.sf() << ", " << tbm.srk() << ", " << tbm.tp() << ", " <<
+                tbm.tf() << ", " << tbm.trk() << ", " <<
+                tbm.cp() << ", " << (tbm.kcr() ? '1' : '0') << ", " <<
+                (tbm.qcr() ? '1' : '0') << "\n";
+            ++ cnt;
+            switch(tbm.sp()){
+                case 'P': ++pcnt; break;
+                case 'N': ++ncnt; break;
+                case 'R': ++rcnt; break;
+                case 'B': ++bcnt; break;
+                case 'Q': ++qcnt; break;
+                case 'K': ++kcnt; break;
+            }
+        }
+    }
+    std::cerr << cnt << "\n";
+    std::cerr << "P " << pcnt << "\n";
+    std::cerr << "N " << ncnt << "\n";
+    std::cerr << "R " << rcnt << "\n";
+    std::cerr << "B " << bcnt << "\n";
+    std::cerr << "Q " << qcnt << "\n";
+    std::cerr << "K " << kcnt << "\n";
+    // 44304 total
+    // P 1352
+    // N 3934
+    // R 10556
+    // B 6524
+    // Q 16862
+    // K 5076
+
+    // here's the breakdown (hand check):
+    // P: (8+(8+14*5)*5+(8*4+14*4*4))*2+28+16
+    //    == 1352
+    // N: ((2*4+3*8+4*16)+(4*4+6*16)+8*16)*2*6-2*4*2-3*4*2
+    //    -4*8*2+8-2
+    //    == 3934
+    // R: (8*5+6*6)*32+48*(2*5+12*6)*2+(3*5+6*6)*2+(4*5+6*6)*2
+    //    +(7+8)*2+8==10548+8 (8 extras due to R-R cr)
+    //    == 10556
+    // B: (7*28+9*20+11*12+13*4)*2*6-7*32+28 == 6524
+    // Q: (21*28+23*20+25*12+27*4)*6*2-21*16*2+21*4-11*2
+    //    == 16862
+    // K: (3*4+5*24+8*36)*6*2-(3*4+5*12)*2+8+4+(3*6+2*5)*2*3
+    //    == 5076
+}
+
+
+int main(int argc, char * argv []) {
+    moves_csv_to_stdout();
+    // std::cout << "Move application rate test.\n";
+    // Position P;
+    // for (int x = 0; x < 10000; ++ x) {
+    //   for (uint16_t code = 0; code < 44304; ++ code) {
+    //     play(P, MOVETABLE[code]);
+    //   }
+    // }
 
     return 0;
 }
