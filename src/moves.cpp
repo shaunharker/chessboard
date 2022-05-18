@@ -5,23 +5,51 @@
 #include <cstdint>
 #include <array>
 #include <iostream>
+#include <string>
 
 template <typename T> constexpr T sqr(T x) {return x*x;}
 
-constexpr std::array<char,7>
-    GLYPHS {'.','P','N','B','R','Q','K'};
+enum Piece {
+  SPACE = 0,
+  PAWN = 1,
+  KNIGHT = 2,
+  BISHOP = 3,
+  ROOK = 4,
+  QUEEN = 5,
+  KING = 6
+};
+
+constexpr std::string_view GLYPHS(".PNBRQK");
+
+struct FourByteMove {
+  // 0x17        | c      | ply % 2
+  // 0x00 - 0x00 | xorepc | xor of prev epc col and new epc col
+  // 0x01        | bqcr   | change black queen castling rights
+  // 0x00        | bkcr   | change black king castling rights
+  //             | wqcr   | change white queen castling rights
+  //             | wkcr   | change white king castling rights
+  // 0x14 - 0x16 | spi    | source piece index
+  // 0x02 - 0x04 | cpi    | capture piece idx into .PNBRQK
+  // 0x11 - 0x13 | sr     | source row 87654321
+  // 0x0E - 0x10 | sc     | source col abcdefgh
+  // 0x0B - 0x0D | tr     | target row 87654321
+  // 0x08 - 0x0A | tc     | target col abcdefgh
+  // 0x05 - 0x07 | tpi    | target piece idx into .PNBRQK
+
+  uint32_t X;
+};
 
 struct ThreeByteMove {
     uint32_t X;
     //  bit range  | mode0 |
     // 0x17        | c     | ply % 2
-    // 0x14 - 0x16 | spi   | source piece index
+    // 0x14 - 0x16 | sp    | source piece enum index
     // 0x11 - 0x13 | sr    | source row 87654321
     // 0x0E - 0x10 | sc    | source col abcdefgh
     // 0x0B - 0x0D | tr    | target row 87654321
     // 0x08 - 0x0A | tc    | target col abcdefgh
-    // 0x05 - 0x07 | tpi   | target piece idx into .PNBRQK
-    // 0x02 - 0x04 | cpi   | capture piece idx into .PNBRQK
+    // 0x05 - 0x07 | tp    | target piece enum index
+    // 0x02 - 0x04 | cp    | capture piece enum index
     // 0x01        | qcr   | change queen castling rights
     // 0x00        | kcr   | change king castling rights
     // note: for Ra1xRa8, Ra8xRa1, Rh1xRh8, Rh8xRh1
@@ -32,25 +60,25 @@ struct ThreeByteMove {
     constexpr ThreeByteMove ():X(0){};
     constexpr ThreeByteMove (uint32_t X):X(X){};
     constexpr bool c() const {return X & 0x800000;}
-    constexpr uint8_t spi() const {return (X >> 0x14) & 0x07;}
+    constexpr uint8_t sp() const {return (X >> 0x14) & 0x07;}
     constexpr uint8_t si() const {return (X >> 0x0E) & 0x3F;}
     constexpr uint8_t ti() const {return (X >> 0x08) & 0x3F;}
-    constexpr uint8_t tpi() const {return (X >> 0x05) & 0x07;}
-    constexpr uint8_t cpi() const {return (X >> 0x02) & 0x07;}
+    constexpr uint8_t tp() const {return (X >> 0x05) & 0x07;}
+    constexpr uint8_t cp() const {return (X >> 0x02) & 0x07;}
     constexpr bool wkrr() const {
-      return (sp() == 'R') && (cp() == 'R') && (
+      return (sp() == ROOK) && (cp() == ROOK) && (
        (si() == 63) && (ti() == 7)) && !c();
     }
     constexpr bool bkrr() const {
-      return (sp() == 'R') && (cp() == 'R') && (
+      return (sp() == ROOK) && (cp() == ROOK) && (
        (si() == 7) && (ti() == 63)) && c();
     }
     constexpr bool wqrr() const {
-      return (sp() == 'R') && (cp() == 'R') && (
+      return (sp() == ROOK) && (cp() == ROOK) && (
        (si() == 56) && (ti() == 0)) && !c();
     }
     constexpr bool bqrr() const {
-      return (sp() == 'R') && (cp() == 'R') && (
+      return (sp() == ROOK) && (cp() == ROOK) && (
        (si() == 0) && (ti() == 56)) && c();
     }
     constexpr bool rr() const {
@@ -58,18 +86,18 @@ struct ThreeByteMove {
     }
     constexpr bool qcr() const {
       // in the rr() case we may compute it:
-      if (rr()) return (X & 0x03) && (wqrr() || bqrr());
+      if (rr()) return ((X & 0x03) != 0) && (wqrr() || bqrr());
       // Otherwise it is stored in the 0x02 bit.
       return X & 0x02;
     }
     constexpr bool kcr() const {
       // in the rr() case we may compute it:
-      if (rr()) return (X & 0x03) && (wkrr() || bkrr());
+      if (rr()) return ((X & 0x03) !=0) && (wkrr() || bkrr());
       // Otherwise it is stored in the 0x01 bit.
       return X & 0x01;
     }
     constexpr bool wcr() const {
-      bool white = !c();
+      bool whitemove = !c();
       // in the rr() case this is stored directly:
       if (rr()) return X & 0x01;
       // if no rights are lost then false:
@@ -77,23 +105,23 @@ struct ThreeByteMove {
       // if both rights are lost then it must
       // be a castling or a king move; just
       // return whose turn it is:
-      if (kcr() && qcr()) return white;
+      if (kcr() && qcr()) return whitemove;
       // a move from the king home square
       // never removes the enemies castling right
       // so, the removed right must be white's in
       // that case:
       if (si() == 60) return true;
       // we know the move isn't RxR, so:
-      if ((sp() == 'R') && ((si() == 56) || (si() == 63)))
+      if ((sp() == ROOK) && ((si() == 56) || (si() == 63)))
         return true;
       // we know the move isn't RxR, so:
-      if ((cp() == 'R') && ((ti() == 56) || (ti() == 63)))
+      if ((cp() == ROOK) && ((ti() == 56) || (ti() == 63)))
         return true;
       // still here?
       return false;
     }
     constexpr bool bcr() const {
-      bool white = !c();
+      bool whitemove = !c();
       // in the rr() case this is stored directly:
       if (rr()) return X & 0x02;
       // if no rights are lost then false:
@@ -101,17 +129,17 @@ struct ThreeByteMove {
       // if both rights are lost then it must
       // be a castling or a king move; just
       // return whose turn it is:
-      if (kcr() && qcr()) return !white;
+      if (kcr() && qcr()) return !whitemove;
       // a move from the king home square
       // never removes the enemies castling right
-      // so, the removed right must be white's in
+      // so, the removed right must be black's in
       // that case:
       if (si() == 4) return true;
       // we know the move isn't RxR, so:
-      if ((sp() == 'R') && ((si() == 0) || (si() == 7)))
+      if ((sp() == ROOK) && ((si() == 0) || (si() == 7)))
         return true;
       // we know the move isn't RxR, so:
-      if ((cp() == 'R') && ((ti() == 0) || (ti() == 7)))
+      if ((cp() == ROOK) && ((ti() == 0) || (ti() == 7)))
         return true;
       // still here?
       return false;
@@ -125,18 +153,10 @@ struct ThreeByteMove {
     constexpr uint8_t sc() const {return si() & 0x07;}
     constexpr uint8_t tr() const {return ti() >> 3;}
     constexpr uint8_t tc() const {return ti() & 0x07;}
-    constexpr char srk() const {return '8'-sr();}
-    constexpr char sf() const {return 'a'+sc();}
-    constexpr char trk() const {return '8'-tr();}
-    constexpr char tf() const {return 'a'+tc();}
-    constexpr bool pr() const {return spi() != tpi();}
-    constexpr char sp() const {return GLYPHS[spi()];}
-    constexpr char tp() const {return GLYPHS[tpi()];}
-    constexpr char cp() const {return GLYPHS[cpi()];}
     constexpr bool ep() const {
-        return sp() == 'P' && (sc() != tc()) && cp() == '.';
+        return (sp() == PAWN) && (sc() != tc()) && (cp() == SPACE);
     }
-    constexpr bool x() const {return (cp() != '.') || ep();}
+    constexpr bool x() const {return (cp() != SPACE) || ep();}
     constexpr bool wkcr() const {return wcr() && kcr();}
     constexpr bool bkcr() const {return bcr() && kcr();}
     constexpr bool wqcr() const {return wcr() && qcr();}
@@ -144,117 +164,103 @@ struct ThreeByteMove {
 
     constexpr bool feasible() const {
 
-        bool white = !c();
+        bool whitemove = !c();
 
-        // spi must name a glyph
-        if (spi() > 6) return false;
+        // sp must name a glyph
+        if (sp() > 6) return false;
 
         // can't move from an empty square
-        if (sp() == '.') return false;
+        if (sp() == SPACE) return false;
 
-        // tpi must name a glyph
-        if (tpi() > 6) return false;
+        // tp must name a glyph
+        if (tp() > 6) return false;
 
-        // tpi can't name '.'
-        if (tp() == '.') return false;
+        // tp can't name SPACE
+        if (tp() == SPACE) return false;
 
-        // cpi must name a glyph
-        if (cpi() > 6) return false;
+        // cp must name a glyph
+        if (cp() > 6) return false;
 
-        // cpi may not name 'K'
-        if (cp() == 'K') return false;
+        // cp may not name KING
+        if (cp() == KING) return false;
 
         // source != target
         if ((sc() == tc()) && (sr() == tr())) return false;
 
         // only pawns promote, and it must be properly positioned
-        if ((sp() != tp()) && ((srk() != (white ? '7' : '2'))
-            || (trk() != (white ? '8' : '1')) || (sp() != 'P'))) {
-            return false;}
+        if ((sp() != tp()) && ((sr() != (whitemove ? 1 : 6)) || (tr() != (whitemove ? 0 : 7)) || (sp() != PAWN))) return false;
 
         // pawns can't promote to space, pawns, or kings
-        if ((sp() != tp()) && ((tp() == '.') ||
-            (tp() == 'P') || (tp() == 'K'))) return false;
+        if ((sp() != tp()) && ((tp() == SPACE) ||
+            (tp() == PAWN) || (tp() == KING))) return false;
 
         // pawns are never on rank 8 or rank 1 (row 0 or row 7)
-        if ((sp() == 'P') && ((srk() == '8') ||
-            (srk() == '1'))) return false;
-        if ((tp() == 'P') && ((trk() == '8') ||
-            (trk() == '1'))) return false;
-        if ((cp() == 'P') && ((trk() == '8') ||
-            (trk() == '1'))) return false;
+        if ((sp() == PAWN) && ((sr() == 0) ||
+            (sr() == 7))) return false;
+        if ((tp() == PAWN) && ((tr() == 0) ||
+            (tr() == 7))) return false;
+        if ((cp() == PAWN) && ((tr() == 0) ||
+            (tr() == 7))) return false;
 
-        if (sp() == 'P') {
+        if (sp() == PAWN) {
             // pawns can only move forward one rank at a time,
             // except for their first move
-            uint8_t level_a = white ? 7-sr() : sr();
-            uint8_t level_b = white ? 7-tr() : tr();
-            if (level_b != level_a + 1) {
-                if ((srk() != (white ? '2' : '7')) ||
-                    (trk() != (white ? '4' : '5'))) return false;
+            if (sr() != tr() + (whitemove ? 1 : -1)) {
+                if ((sr() != (whitemove ? 6 : 1)) ||
+                    (tr() != (whitemove ? 4 : 3))) return false;
                 // can't capture on double push
-                if (cp() != '.') return false;
+                if (cp() != SPACE) return false;
             }
             // pawns stay on file when not capturing,
             // and move over one file when capturing.
             // i) can't move over more than one file
             if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) return false;
             // ii) can't capture forward
-            if ((sc() == tc()) && (cp() != '.')) return false;
+            if ((sc() == tc()) && (cp() != SPACE)) return false;
             // iii) can't move diagonal without capture
-            if ((sc() != tc()) && (cp() == '.')) {
+            if ((sc() != tc()) && (cp() == SPACE)) {
                 // invalid unless possible en passant
-                if (trk() != (white ? '6' : '3')) return false;
+                if (tr() != (whitemove ? 2 : 5)) return false;
             }
         }
 
         if (sp() != tp()) {
             // can only promote on the endrank
-            if (trk() != (white ? '8' : '1')) return false;
+            if (tr() != (whitemove ? 0 : 7)) return false;
             // can only promote to N, B, R, Q
-            if ((tp() == '.') || (tp() == 'P') ||
-                    (tp() == 'K')) return false;
+            if ((tp() == SPACE) || (tp() == PAWN) ||
+                    (tp() == KING)) return false;
         }
 
         // that ought to cover it for pawns.
 
-        if (sp() == 'N') {
+        if (sp() == KNIGHT) {
             // i know how horsies move
             if ((sc()*sc() + tc()*tc() + sr()*sr() + tr()*tr())
                 != 5 + 2*(sc()*tc() + sr()*tr())) return false;
         }
 
-
-        if (sp() == 'B') {
+        if (sp() == BISHOP) {
             // bishops move on diagonals and antidiagonals
             if ((sc() + sr() != tc() + tr()) && // not on same antidiagonal
                     (sc() + tr() != tc() + sr())) // not on same diagonal
                 return false;
         }
 
-
-        if (sp() == 'R') {
+        if (sp() == ROOK) {
             // rooks move on ranks and files (rows and columns)
-            if ((sc() != tc()) && // not on same file
-                    (sr() != tr())) // not on same rank
-                return false;
+            if ((sc() != tc()) && (sr() != tr())) return false;
             // conditions where kingside castle right may change
-            if (kcr() && !((sf() == 'h') && (srk() == (white ? '1' : '8')))
-                                && !((tf() == 'h') && (trk() == (white ? '8' : '1'))))
-                return false;
-            // if losing kingside rights, cannot move to files a-e
-            if (kcr() && ((tf() == 'a') || (tf() == 'b') || (tf() == 'c') || (tf() == 'd') || (tf() == 'e')))
-                return false;
+            if (kcr() && !((sc() == 7) && (sr() == (whitemove ? 7 : 0))) && !((tc() == 7) && (tr() == (whitemove ? 0 : 7)))) return false;
+            // if losing kingside rights, cannot move to a rook to files a-e
+            if (kcr() && (tc() < 5)) return false;
             // conditions where queenside castle right may change
-            if (qcr() && !((sf() == 'a') && (srk() == (white ? '1' : '8')))
-                                && !((tf() == 'a') && (trk() == (white ? '8' : '1'))))
-                return false;
-            // if losing queenside rights, cannot move to files e-h
-            if (qcr() && ((tf() == 'e') || (tf() == 'f') || (tf() == 'g') || (tf() == 'h')))
-                return false;
+            if (qcr() && !((sc() == 0) && (sr() == (whitemove ? 7 : 0))) && !((tc() == 0) && (tr() == (whitemove ? 0 : 7)))) return false;
+            // if losing queenside rights, cannot move a rook to files e-h
+            if (qcr() && ((tc() > 3))) return false;
         }
 
-        if (sp() == 'Q') {
+        if (sp() == QUEEN) {
             // queens move on ranks, files, diagonals, and
             // antidiagonals.
             if ((sc() + sr() != tc() + tr()) && // not on same antidiagonal
@@ -265,27 +271,28 @@ struct ThreeByteMove {
             if ((sc() == tc()) && (sr() == tr())) return false;
         }
 
-      if (sp() == 'K') {
+      if (sp() == KING) {
           // if kingside castle, must be losing kingside rights
-          if ((sf() == 'e') && (srk() == (white ? '1' : '8')) && (tf() == 'g') && (trk() == (white ? '1' : '8')) && !kcr()) return false;
+          if ((sc() == 4) && (sr() == (whitemove ? 7 : 0)) && (tc() == 6) && (tr() == (whitemove ? 7 : 0)) && !kcr()) return false;
           // if queenside castle, must be losing queenside rights
-          if ((sf() == 'e') && (srk() == (white ? '1' : '8')) && (tf() == 'c') && (trk() == (white ? '1' : '8')) && !qcr()) return false;
-          // the weirdest moves: (objectively, too. the last to have to debug and add code to handle) king takes rook losing castling rights.
-          // Only diagonal/antidiagonal captures could possibly occur during play.
-          if ((cp() == 'R') && kcr() && (trk() == (white ? '8' : '1')) && (tf() == 'h') && !((srk() == (white ? '7' : '2')) && (sf() == 'g'))) return false;
-          if ((cp() == 'R') && qcr() && (trk() == (white ? '8' : '1')) && (tf() == 'a') && !((srk() == (white ? '7' : '2')) && (sf() == 'b'))) return false;
+          if ((sc() == 4) && (sr() == (whitemove ? 7 : 0)) && (tc() == 2) && (tr() == (whitemove ? 7 : 0)) && !qcr()) return false;
+          // king takes rook losing castling rights:
+          //   only diagonal/antidiagonal captures could
+          //   possibly occur during play:
+          if ((cp() == ROOK) && kcr() && (tr() == (whitemove ? 0 : 7)) && (tc() == 7) && !((sr() == (whitemove ? 1 : 6)) && (sc() == 6))) return false;
+          if ((cp() == ROOK) && qcr() && (tr() == (whitemove ? 0 : 7)) && (tc() == 0) && !((sr() == (whitemove ? 1 : 6)) && (sc() == 1))) return false;
           // castling cannot capture, must be properly positioned
           if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) {
-              if (!((tf() == 'g') && kcr()) && !((tf() == 'c') && qcr())) return false;
-              if (cp() != '.') return false;
-              if (sf() != 'e') return false;
-              if (srk() != (white ? '1' : '8')) return false;
-              if (trk() != (white ? '1' : '8')) return false;
+              if (!((tc() == 6) && kcr()) && !((tc() == 2) && qcr())) return false;
+              if (cp() != SPACE) return false;
+              if (sc() != 4) return false;
+              if (sr() != (whitemove ? 7 : 0)) return false;
+              if (tr() != (whitemove ? 7 : 0)) return false;
           }
           // kings move to neighboring squares
           if (((sc()*sc() + tc()*tc() + sr()*sr()) + tr()*tr() >
               2*(1 + sc()*tc() + sr()*tr())) && !((sc() == 4) &&
-              (sr() == (white ? 7 : 0)) && (tr()==sr()) &&
+              (sr() == (whitemove ? 7 : 0)) && (tr()==sr()) &&
               (((tc()==2) && qcr()) || ((tc()==6) && kcr()))))
               return false;
       }
@@ -306,33 +313,34 @@ struct ThreeByteMove {
 
       // it isn't possible to remove castling rights via a Rf8 x Rh8 because the enemy king would be in check. Similarly for other exceptions
 
-      bool kingmove = (sp() == 'K') && (sr() == (white ? 7 : 0)) && (sc()==4);
-      bool a1rookcapture = (cp() == 'R') && (ti() == 56) && !white;
-      bool a8rookcapture = (cp() == 'R') && (ti() == 0) && white;
-      bool h1rookcapture = (cp() == 'R') && (ti() == 63) && !white;
-      bool h8rookcapture = (cp() == 'R') && (ti() == 7) && white;
+      bool kingmove = (sp() == KING) && (sr() == (whitemove ? 7 : 0)) && (sc() == 4);
+      bool a1rookcapture = (cp() == ROOK) && (ti() == 56) && !whitemove;
+      bool a8rookcapture = (cp() == ROOK) && (ti() == 0) && whitemove;
+      bool h1rookcapture = (cp() == ROOK) && (ti() == 63) && !whitemove;
+      bool h8rookcapture = (cp() == ROOK) && (ti() == 7) && whitemove;
 
-      bool a1rookmove = (sp() == 'R') && (si() == 56) && white && ((sc() == 0) || (sc() == 1) || (sc() == 2) || (sc() == 3));
-      bool a8rookmove = (sp() == 'R') && (si() == 0) && !white && ((sc() == 0) || (sc() == 1) || (sc() == 2) || (sc() == 3));
-      bool h1rookmove = (sp() == 'R') && (si() == 63) && white && ((sc() == 5) || (sc() == 6) || (sc() == 7));
-      bool h8rookmove = (sp() == 'R') && (si() == 7) && !white && ((sc() == 5) || (sc() == 6) || (sc() == 7));
+      bool a1rookmove = (sp() == ROOK) && (si() == 56) && whitemove && (tc() < 4);
+      bool a8rookmove = (sp() == ROOK) && (si() == 0) && !whitemove && (tc() < 4);
+      bool h1rookmove = (sp() == ROOK) && (si() == 63) && whitemove && (tc() > 4);
+      bool h8rookmove = (sp() == ROOK) && (si() == 7) && !whitemove && (tc() > 4);
+
       if (kcr() && !(kingmove || h1rookmove || h8rookmove)) {
           if (h1rookcapture || h8rookcapture) {
-              // exclude moves implying king is en prise
-              if ((sp()=='R') && (sc()<6)) return false;
-              if ((sp()=='Q') && (sr() == tr()) && (sc()<6)) return false;
-              if ((sp()=='K') && ((sr() == tr()) || (sc() == tc()))) return false;
+              // exclude moves implying a king is en prise
+              if ((sp() == ROOK) && (sc() < 6)) return false;
+              if ((sp() == QUEEN) && (sr() == tr()) && (sc() < 6)) return false;
+              if ((sp() == KING) && ((sr() == tr()) || (sc() == tc()))) return false;
           } else {
               return false;
           }
       }
       if (qcr() && !(kingmove || a1rookmove || a8rookmove)) {
           if (a1rookcapture || a8rookcapture) {
-              // exclude moves implying king is en prise
-              if ((sp()=='R') && (sc() > 2)) return false;
-              if ((sp()=='Q') && (sr() == tr()) && (sc() > 2)) return false;
-              if ((sp()=='N') && (srk() == (white ? '7' : '2')) && (sc() == 2)) return false;
-              if ((sp()=='K') && ((sr() == tr()) || (sc() == tc()))) return false;
+              // exclude moves implying a king is en prise
+              if ((sp() == ROOK) && (sc() > 2)) return false;
+              if ((sp() == QUEEN) && (sr() == tr()) && (sc() > 2)) return false;
+              if ((sp() == KNIGHT) && (sr() == (whitemove ? 1 : 6)) && (sc() == 2)) return false;
+              if ((sp() == KING) && ((sr() == tr()) || (sc() == tc()))) return false;
           } else {
                   return false;
           }
@@ -348,18 +356,19 @@ typedef uint64_t Bitboard;
 typedef uint8_t Square;
 
 struct Position {
-    Bitboard white;
-    Bitboard black;
     Bitboard pawn;
     Bitboard knight;
     Bitboard bishop;
     Bitboard rook;
     Bitboard queen;
     Bitboard king;
+    Bitboard white;
+    Bitboard black;
     uint8_t rights;
-    char board[65];
-    Position() :
-    board("rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR") {
+    //char board[65];
+    Position() //:
+    //board("rnbqkbnrpppppppp................................PPPPPPPPRNBQKBNR")
+    {
         white = 0xFFFF000000000000; // rank_1 | rank_2;
         black = 0x000000000000FFFF; // rank_7 | rank_8;
         king = 0x1000000000000010; // e1 | e8;
@@ -375,102 +384,96 @@ struct Position {
     constexpr bool wqcr() const {return rights & 4;}
     constexpr bool bkcr() const {return rights & 8;}
     constexpr bool bqcr() const {return rights & 16;}
-};
 
 
-void play(Position & P, ThreeByteMove const& tbm) {
-    auto c = tbm.c();
-    auto si = tbm.si();
-    auto ti = tbm.ti();
-    auto sc = tbm.sc();
-    auto tc = tbm.tc();
-    auto ui = tbm.ui();
-    auto sp = tbm.sp();
-    auto tp = tbm.tp();
-    auto cp = tbm.cp();
-    auto wkcr = tbm.wkcr();
-    auto bkcr = tbm.bkcr();
-    auto wqcr = tbm.wqcr();
-    auto bqcr = tbm.bqcr();
-    uint64_t s = tbm.s();
-    uint64_t t = tbm.t();
+  void play(ThreeByteMove const& tbm) {
+      auto c = tbm.c();
+      auto si = tbm.si();
+      auto ti = tbm.ti();
+      auto sc = tbm.sc();
+      auto tc = tbm.tc();
+      auto ui = tbm.ui();
+      auto sp = tbm.sp();
+      auto tp = tbm.tp();
+      auto cp = tbm.cp();
+      auto wkcr = tbm.wkcr();
+      auto bkcr = tbm.bkcr();
+      auto wqcr = tbm.wqcr();
+      auto bqcr = tbm.bqcr();
+      uint64_t s = tbm.s();
+      uint64_t t = tbm.t();
+      //uint64_t u = tbm.u();
 
-    uint64_t & pawn = P.pawn;
-    uint64_t & knight = P.knight;
-    uint64_t & bishop = P.bishop;
-    uint64_t & rook = P.rook;
-    uint64_t & queen = P.queen;
-    uint64_t & king = P.king;
-    auto & rights = P.rights;
-    auto & board = P.board;
-    bool white = !c;
-    uint64_t & us = white ? P.white : P.black;
-    uint64_t & them = white ? P.black : P.white;
+      bool whitemove = !c;
+      uint64_t & us = whitemove ? white : black;
+      uint64_t & them = whitemove ? black : white;
 
-    rights ^= (wkcr ? 0x02 : 0x00) | (wqcr ? 0x04 : 0x00) |
-              (bkcr ? 0x08 : 0x00) | (bqcr ? 0x10 : 0x00) |
-              (0x01);
-    us ^= s;
-    auto bsp = white ? sp : (sp + 32);
-    board[si] ^= ('.' ^ bsp);
+      rights ^= (wkcr ? 0x02 : 0x00) | (wqcr ? 0x04 : 0x00) |
+                (bkcr ? 0x08 : 0x00) | (bqcr ? 0x10 : 0x00) |
+                (0x01);
+      us ^= s;
+      //auto bsp = whitemove ? sp : (sp + 32);
+      //board[si] ^= (SPACE ^ bsp);
 
-    switch (sp) {
-        case 'P': pawn ^= s; break;
-        case 'N': knight ^= s; break;
-        case 'B': bishop ^= s; break;
-        case 'R': rook ^= s; break;
-        case 'Q': queen ^= s; break;
-        case 'K': king ^= s; break;
-    }
+      switch (sp) {
+          case PAWN: pawn ^= s; break;
+          case KNIGHT: knight ^= s; break;
+          case BISHOP: bishop ^= s; break;
+          case ROOK: rook ^= s; break;
+          case QUEEN: queen ^= s; break;
+          case KING: king ^= s; break;
+      }
 
-    // Remove capture piece (except en passant), if any
-    if (cp != '.') them ^= t;
+      switch (cp) {
+          case PAWN: pawn ^= t; break;
+          case KNIGHT: knight ^= t; break;
+          case BISHOP: bishop ^= t; break;
+          case ROOK: rook ^= t; break;
+          case QUEEN: queen ^= t; break;
+      }
 
-    switch (cp) {
-        case 'P': pawn ^= t; break;
-        case 'N': knight ^= t; break;
-        case 'B': bishop ^= t; break;
-        case 'R': rook ^= t; break;
-        case 'Q': queen ^= t; break;
-    }
+      us ^= t;
+      if (cp != SPACE) {
+        //auto bcp = whitemove ? (cp + 32) : cp;
+        //board[ti] ^= bcp;
+        them ^= t;
+      }
 
-    us ^= t;
-    auto bcp = white ? (cp + 32) : cp;
-    auto btp = white ? tp : (tp + 32);
+      switch (tp) {
+          case PAWN: pawn ^= t; break;
+          case KNIGHT: knight ^= t; break;
+          case BISHOP: bishop ^= t; break;
+          case ROOK: rook ^= t; break;
+          case QUEEN: queen ^= t; break;
+      }
 
-    board[ti] ^= (bcp ^ btp);
+      //auto btp = whitemove ? tp : (tp + 32);
+      //board[ti] ^= btp;
 
-    switch (tp) {
-        case 'P': pawn ^= t; break;
-        case 'N': knight ^= t; break;
-        case 'B': bishop ^= t; break;
-        case 'R': rook ^= t; break;
-        case 'Q': queen ^= t; break;
-    }
+      if ((sp == PAWN) && (tp == PAWN) &&
+              (cp == SPACE) && (sc != tc)) {
+          // en passant capture
+          pawn ^= tbm.u();
+          them ^= tbm.u();
+          //board[ui] ^= (SPACE ^ (whitemove ? SPACE : PAWN));
+      }
 
-    if ((sp == 'P') && (tp == 'P') &&
-            (cp == '.') && (sc != tc)) {
-        // en passant capture
-        pawn ^= tbm.u();
-        them ^= tbm.u();
-        board[ui] ^= ('.' ^ (white ? 'p' : 'P'));
-    }
-
-    if ((sp == 'K') && (tc == sc + 2)) {
-        rook ^= white ? 0xA000000000000000 :
+      if ((sp == KING) && (tc == sc + 2)) {
+          rook ^= whitemove ? 0xA000000000000000 :
+                          0x00000000000000A0;
+          us ^= whitemove ? 0xA000000000000000 :
                         0x00000000000000A0;
-        us ^= white ? 0xA000000000000000 :
-                      0x00000000000000A0;
-    }
+      }
 
-    if ((sp == 'K') && (tc + 2 == sc)) {
-        rook ^= white ? 0x0900000000000000 :
+      if ((sp == KING) && (tc + 2 == sc)) {
+          rook ^= whitemove ? 0x0900000000000000 :
+                          0x0000000000000009;
+          us ^= whitemove ? 0x0900000000000000 :
                         0x0000000000000009;
-        us ^= white ? 0x0900000000000000 :
-                      0x0000000000000009;
-    }
+      }
 
-}
+  }
+};
 
 std::array<ThreeByteMove,44304>
 compute_move_table() {
@@ -514,23 +517,32 @@ void moves_csv_to_stdout() {
     uint32_t bcnt = 0;
     uint32_t qcnt = 0;
     uint32_t kcnt = 0;
-    std::cout << "turn, sp, sf, srk, tp, tf, trk, cp, kcr, qcr\n";
+    std::cout << "turn, sp, sc, sr, tp, tc, tr, cp, wkcr, wqcr, bkcr, bqcr\n";
     for ( uint32_t i = 0; i < 256*256*256; ++i) {
         ThreeByteMove tbm(i);
         if (tbm.feasible()) {
-            std::cout << (tbm.c() ? '1' : '0') << ", " << tbm.sp() << ", " <<
-                tbm.sf() << ", " << tbm.srk() << ", " << tbm.tp() << ", " <<
-                tbm.tf() << ", " << tbm.trk() << ", " <<
-                tbm.cp() << ", " << (tbm.kcr() ? '1' : '0') << ", " <<
-                (tbm.qcr() ? '1' : '0') << "\n";
+            std::cout <<
+                (tbm.c() ? "b" : "w") <<
+                GLYPHS[tbm.sp()] <<
+                char('a'+tbm.sc()) <<
+                (8-tbm.sr()) <<
+                GLYPHS[tbm.tp()] <<
+                char('a'+tbm.tc()) <<
+                (8-tbm.tr()) <<
+                GLYPHS[tbm.cp()] <<
+                (tbm.wkcr() ? "K" : "-") <<
+                (tbm.wqcr() ? "Q" : "-") <<
+                (tbm.bkcr() ? "k" : "-") <<
+                (tbm.bqcr() ? "q" : "-") <<
+                 "\n";
             ++ cnt;
             switch(tbm.sp()){
-                case 'P': ++pcnt; break;
-                case 'N': ++ncnt; break;
-                case 'R': ++rcnt; break;
-                case 'B': ++bcnt; break;
-                case 'Q': ++qcnt; break;
-                case 'K': ++kcnt; break;
+                case PAWN: ++pcnt; break;
+                case KNIGHT: ++ncnt; break;
+                case ROOK: ++rcnt; break;
+                case BISHOP: ++bcnt; break;
+                case QUEEN: ++qcnt; break;
+                case KING: ++kcnt; break;
             }
         }
     }
@@ -572,7 +584,7 @@ int main(int argc, char * argv []) {
     // Position P;
     // for (int x = 0; x < 10000; ++ x) {
     //   for (uint16_t code = 0; code < 44304; ++ code) {
-    //     play(P, MOVETABLE[code]);
+    //       P.play(MOVETABLE[code]);
     //   }
     // }
 
