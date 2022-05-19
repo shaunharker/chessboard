@@ -194,76 +194,55 @@ constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
 constexpr uint8_t bitreverse8(uint8_t x) {
   return __builtin_bitreverse8(x);
 }
-template <uint8_t row, uint8_t col>
-constexpr uint8_t e_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t e_hash (Bitboard x) {
     return (x >> (8*row+col+1)) & rank_8;
 };
-
-template <uint8_t row, uint8_t col>
-constexpr uint8_t n_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t n_hash (Bitboard x) {
     return (antidiagonal * (file_a & (x >> (8*row+col+8)))) >> 56;
 };
-
-template <uint8_t row, uint8_t col>
-constexpr uint8_t w_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t w_hash (Bitboard x) {
     return bitreverse8(((x >> (8*row)) << (8-col)) & rank_8);
 };
-
-template <uint8_t row, uint8_t col>
-constexpr uint8_t s_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t s_hash (Bitboard x) {
     // there is probably slightly faster magic
     return bitreverse8((antidiagonal * (file_a & (x << (8*(8-row)-col)))) >> 56);
 };
-
-template <uint8_t row, uint8_t col>
-constexpr Bitboard nwse_diagonal() {
+template <uint8_t row, uint8_t col> constexpr Bitboard nwse_diagonal() {
   if constexpr (row > col) {
     return diagonal >> (8*(row-col));
   } else {
     return diagonal << (8*(col-row));
   }
 }
-
-template <uint8_t row, uint8_t col>
-constexpr Bitboard swne_diagonal() {
+template <uint8_t row, uint8_t col> constexpr Bitboard swne_diagonal() {
   if constexpr (row + col < 7) {
     return antidiagonal << (8*(7 - row+col));
   } else {
     return antidiagonal >> (8*(row+col - 7));
   }
 }
-
-template <uint8_t row, uint8_t col>
-constexpr uint8_t nw_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t nw_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = nwse_diagonal<row,col>();
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
-
-template <uint8_t row, uint8_t col>
-constexpr uint8_t ne_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t ne_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = swne_diagonal<row,col>();
     return (((file_a * (x & this_diagonal)) >> 56) >> (col+1)) & rank_8;
 };
-
-template <uint8_t row, uint8_t col>
-constexpr uint8_t sw_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t sw_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = swne_diagonal<row,col>();
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
-
-template <uint8_t row, uint8_t col>
-constexpr uint8_t se_hash (Bitboard x) {
+template <uint8_t row, uint8_t col> constexpr uint8_t se_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = nwse_diagonal<row,col>();
     return (((file_a * (x & this_diagonal)) >> 56) << (col+1)) & rank_8;
 };
-
-std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> cap {};
-
-void compute_cap() {
+std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
     // compute checks and pins to the right,
     // that is, least sig bits are closer to king
     // 0x00-0x07 0x08-0x0E 0x0F-0x014
     // slider    us        them
+    std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> result {};
     for (uint32_t x = 0; x < (1 << 21); ++ x) {
         uint8_t slider = x & 0x7F;
         uint8_t us = (x >> 7) & 0x7F;
@@ -272,62 +251,30 @@ void compute_cap() {
         if (slider & them) {
           checker = ntz(slider & them);
         } else {
-          cap[x] = {0,0};
+          result[x] = {0,0};
           continue;
         }
         uint8_t front = (1 << checker) - 1;
         if (them & front) {
-          cap[x] = {0,0};
+          result[x] = {0,0};
           continue;
         }
         uint8_t pcnt = popcount(us & front);
         switch (pcnt) {
             case 0:
-                cap[x] = {checker, 0};
+                result[x] = {checker, 0};
                 break;
             case 1:
-                cap[x] = {checker, ntz(us)};
+                result[x] = {checker, ntz(us)};
                 break;
             default:
-                cap[x] = {0,0};
+                result[x] = {0,0};
                 break;
         }
     }
+    return result;
 }
-
-// template <uint8_t d>
-// constexpr uint8_t smoosh(uint8_t x) {
-//     constexpr uint8_t lower_mask = (uint8_t(1) << d) - 1;
-//     constexpr uint8_t upper_mask = ~(((uint8_t(1) << (d+1)) - 1);
-//     return ((x & upper_mask) >> 1) | (x & lower_mask);
-// }
-
-// // file-checks-and-pins (fcap)  (actually goes by col)
-// std::array<std::array<std::pair<Bitboard,Bitboard>, (1 << 21)>, 8> fcap;
-//
-// // rank-checks-and-pins (rcap)  (actually goes by row)
-// std::array<std::array<std::pair<Bitboard,Bitboard>, (1 << 21)>, 8> rcap;
-
-// template <uint8_t oki>
-// std::pair<Bitboard, Bitboard>
-// file_checks_and_pins(Bitboard enemy_sliders, Bitboard us, Bitboard them) {
-//     auto uint32_t code = (smoosh<row>(filehash<col>(enemy_sliders)) << 14) |
-//                          (smoosh<row>(filehash<col>(us))            <<  7) |
-//                          (smoosh<row>(filehash<col>(them)));
-//     return fcap[col][code];
-// }
-//
-// template <uint8_t oki>
-// std::pair<Bitboard, Bitboard>
-// rank_checks_and_pins(Bitboard enemy_sliders, Bitboard us, Bitboard them) {
-//     uint8_t row = oki >> 3;
-//     uint8_t col = oki & 7;
-//     auto uint32_t code = (smoosh<col>(rankhash<row>(enemy_sliders)) << 14) |
-//                          (smoosh<col>(rankhash<row>(us))            <<  7) |
-//                          (smoosh<col>(rankhash<row>(them)));
-//     return rcap[oki][code];
-// }
-
+std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> cap = compute_cap();
 
 // threat computations
 
