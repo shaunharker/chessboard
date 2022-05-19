@@ -579,7 +579,7 @@ public:
     // The "check_for_mates" feature is used like this:
     // the function calls itself with it set to false
     // so that it doesn't infinitely recurse trying to
-    // evaluate the legal most list of the mated position.
+    // evaluate the legal move list of the mated position.
 
     bool white_to_move = (ply % 2 == 0);
     auto us = white_to_move ? white : black;
