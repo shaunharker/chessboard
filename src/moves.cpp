@@ -442,9 +442,6 @@ struct ThreeByteMove {
     constexpr bool bcr() const {return bkcr() && bqcr();}
 
     constexpr bool feasible() const {
-        // determine if move could happen in play
-        bool whitemove = !c();
-
         // sp must name a glyph
         if (sp() > 6) return false;
 
@@ -467,7 +464,7 @@ struct ThreeByteMove {
         if ((sc() == tc()) && (sr() == tr())) return false;
 
         // only pawns promote, and it must be properly positioned
-        if ((sp() != tp()) && ((sr() != (whitemove ? 1 : 6)) || (tr() != (whitemove ? 0 : 7)) || (sp() != PAWN))) return false;
+        if ((sp() != tp()) && ((sr() != (c() ? 6 : 1)) || (tr() != (c() ? 7 : 0)) || (sp() != PAWN))) return false;
 
         // pawns can't promote to space, pawns, or kings
         if ((sp() != tp()) && ((tp() == SPACE) ||
@@ -481,12 +478,12 @@ struct ThreeByteMove {
         if ((cp() == PAWN) && ((tr() == 0) ||
             (tr() == 7))) return false;
 
-        if (sp() == PAWN) {
+        if ((sp() == PAWN) || pr()) {
             // pawns can only move forward one rank at a time,
             // except for their first move
-            if (sr() != tr() + (whitemove ? 1 : -1)) {
-                if ((sr() != (whitemove ? 6 : 1)) ||
-                    (tr() != (whitemove ? 4 : 3))) return false;
+            if (sr() != tr() + (c() ? -1 : 1)) {
+                if ((sr() != (c() ? 1 : 6)) ||
+                    (tr() != (c() ? 3 : 4))) return false;
                 // can't capture on double push
                 if (cp() != SPACE) return false;
             }
@@ -499,13 +496,13 @@ struct ThreeByteMove {
             // iii) can't move diagonal without capture
             if ((sc() != tc()) && (cp() == SPACE)) {
                 // invalid unless possible en passant
-                if (tr() != (whitemove ? 2 : 5)) return false;
+                if (tr() != (c() ? 5 : 2)) return false;
             }
         }
 
-        if (sp() != tp()) {
+        if (pr()) {
             // can only promote on the endrank
-            if (tr() != (whitemove ? 0 : 7)) return false;
+            if (tr() != (c() ? 7 : 0)) return false;
             // can only promote to N, B, R, Q
             if ((tp() == SPACE) || (tp() == PAWN) ||
                 (tp() == KING)) return false;
@@ -526,11 +523,11 @@ struct ThreeByteMove {
             // rooks move on ranks and files (rows and columns)
             if ((sc() != tc()) && (sr() != tr())) return false;
             // conditions where kingside castle right may change
-            if (kcr() && !((sc() == 7) && (sr() == (whitemove ? 7 : 0))) && !((tc() == 7) && (tr() == (whitemove ? 0 : 7)))) return false;
+            if (kcr() && !((sc() == 7) && (sr() == (c() ? 0 : 7))) && !((tc() == 7) && (tr() == (c() ? 7 : 0)))) return false;
             // if losing kingside rights, cannot move to a rook to files a-e
             if (kcr() && (tc() < 5)) return false;
             // conditions where queenside castle right may change
-            if (qcr() && !((sc() == 0) && (sr() == (whitemove ? 7 : 0))) && !((tc() == 0) && (tr() == (whitemove ? 0 : 7)))) return false;
+            if (qcr() && !((sc() == 0) && (sr() == (c() ? 0 : 7))) && !((tc() == 0) && (tr() == (c() ? 7 : 0)))) return false;
             // if losing queenside rights, cannot move a rook to files e-h
             if (qcr() && ((tc() > 3))) return false;
         }
@@ -546,26 +543,26 @@ struct ThreeByteMove {
         }
         if (sp() == KING) {
             // if kingside castle, must be losing kingside rights
-            if ((sc() == 4) && (sr() == (whitemove ? 7 : 0)) && (tc() == 6) && (tr() == (whitemove ? 7 : 0)) && !kcr()) return false;
+            if ((sc() == 4) && (sr() == (c() ? 0 : 7)) && (tc() == 6) && (tr() == (c() ? 0 : 7)) && !kcr()) return false;
             // if queenside castle, must be losing queenside rights
-            if ((sc() == 4) && (sr() == (whitemove ? 7 : 0)) && (tc() == 2) && (tr() == (whitemove ? 7 : 0)) && !qcr()) return false;
+            if ((sc() == 4) && (sr() == (c() ? 0 : 7)) && (tc() == 2) && (tr() == (c() ? 0 : 7)) && !qcr()) return false;
             // king takes rook losing castling rights:
             //   only diagonal/antidiagonal captures could
             //   possibly occur during play:
-            if ((cp() == ROOK) && kcr() && (tr() == (whitemove ? 0 : 7)) && (tc() == 7) && !((sr() == (whitemove ? 1 : 6)) && (sc() == 6))) return false;
-            if ((cp() == ROOK) && qcr() && (tr() == (whitemove ? 0 : 7)) && (tc() == 0) && !((sr() == (whitemove ? 1 : 6)) && (sc() == 1))) return false;
+            if ((cp() == ROOK) && kcr() && (tr() == (c() ? 7 : 0)) && (tc() == 7) && !((sr() == (c() ? 6 : 1)) && (sc() == 6))) return false;
+            if ((cp() == ROOK) && qcr() && (tr() == (c() ? 7 : 0)) && (tc() == 0) && !((sr() == (c() ? 6 : 1)) && (sc() == 1))) return false;
             // castling cannot capture, must be properly positioned
             if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) {
                 if (!((tc() == 6) && kcr()) && !((tc() == 2) && qcr())) return false;
                 if (cp() != SPACE) return false;
                 if (sc() != 4) return false;
-                if (sr() != (whitemove ? 7 : 0)) return false;
-                if (tr() != (whitemove ? 7 : 0)) return false;
+                if (sr() != (c() ? 0 : 7)) return false;
+                if (tr() != (c() ? 0 : 7)) return false;
             }
             // kings move to neighboring squares
             if (((sc()*sc() + tc()*tc() + sr()*sr()) + tr()*tr() >
                 2*(1 + sc()*tc() + sr()*tr())) && !((sc() == 4) &&
-                (sr() == (whitemove ? 7 : 0)) && (tr()==sr()) &&
+                (sr() == (c() ? 0 : 7)) && (tr()==sr()) &&
                 (((tc()==2) && qcr()) || ((tc()==6) && kcr()))))
                 return false;
         }
@@ -582,7 +579,7 @@ struct ThreeByteMove {
         // White could capture an unmoved a8 rook with its unmoved a1 rook,
         // and similar scenarios, so the cases aren't mutually exclusive.
         // it isn't possible to remove castling rights via a Rf8 x Rh8 because the enemy king would be in check. Similarly for other exceptions
-        bool kingmove = (sp() == KING) && (sr() == (whitemove ? 7 : 0)) && (sc() == 4);
+        bool kingmove = (sp() == KING) && (sr() == (c() ? 0 : 7)) && (sc() == 4);
         bool a1rookcapture = (cp() == ROOK) && (ti() == 56) && !whitemove;
         bool a8rookcapture = (cp() == ROOK) && (ti() == 0) && whitemove;
         bool h1rookcapture = (cp() == ROOK) && (ti() == 63) && !whitemove;
@@ -607,7 +604,7 @@ struct ThreeByteMove {
                 // exclude moves implying a king is en prise
                 if ((sp() == ROOK) && (sc() > 2)) return false;
                 if ((sp() == QUEEN) && (sr() == tr()) && (sc() > 2)) return false;
-                if ((sp() == KNIGHT) && (sr() == (whitemove ? 1 : 6)) && (sc() == 2)) return false;
+                if ((sp() == KNIGHT) && (sr() == (c() ? 6 : 1)) && (sc() == 2)) return false;
                 if ((sp() == KING) && ((sr() == tr()) || (sc() == tc()))) return false;
             } else {
                     return false;
@@ -668,7 +665,6 @@ struct Position {
         auto ti = tbm.ti();
         auto sc = tbm.sc();
         auto tc = tbm.tc();
-        auto ui = tbm.ui();
         auto sp = tbm.sp();
         auto tp = tbm.tp();
         auto cp = tbm.cp();
@@ -678,19 +674,17 @@ struct Position {
         auto bqcr = tbm.bqcr();
         uint64_t s = tbm.s();
         uint64_t t = tbm.t();
+        auto ui = tbm.ui();
+
         //uint64_t u = tbm.u();
 
-        bool whitemove = !c;
-        uint64_t & us = whitemove ? white : black;
-        uint64_t & them = whitemove ? black : white;
+        uint64_t & us = c ? black : white;
+        uint64_t & them = c ? white : black;
 
         rights ^= (wkcr ? 0x02 : 0x00) | (wqcr ? 0x04 : 0x00) |
                   (bkcr ? 0x08 : 0x00) | (bqcr ? 0x10 : 0x00) |
                   (0x01);
         us ^= s;
-        //auto bsp = whitemove ? sp : (sp + 32);
-        //board[si] ^= (SPACE ^ bsp);
-
         switch (sp) {
             case PAWN: pawn ^= s; break;
             case KNIGHT: knight ^= s; break;
@@ -710,8 +704,6 @@ struct Position {
 
         us ^= t;
         if (cp != SPACE) {
-          //auto bcp = whitemove ? (cp + 32) : cp;
-          //board[ti] ^= bcp;
           them ^= t;
         }
 
@@ -723,15 +715,12 @@ struct Position {
             case QUEEN: queen ^= t; break;
         }
 
-        //auto btp = whitemove ? tp : (tp + 32);
-        //board[ti] ^= btp;
-
         if ((sp == PAWN) && (tp == PAWN) &&
                 (cp == SPACE) && (sc != tc)) {
             // en passant capture
-            pawn ^= tbm.u();
-            them ^= tbm.u();
-            //board[ui] ^= (SPACE ^ (whitemove ? SPACE : PAWN));
+            Bitboard u = tbm.u();
+            pawn ^= u;
+            them ^= u;
         }
 
         if ((sp == KING) && (tc == sc + 2)) {
@@ -761,9 +750,20 @@ struct Position {
 
         std::vector<ThreeByteMove> moves {};
 
-        void add_move_s_t(bool c, bool pr, Piece tp, uint8_t si, uint8_t ti, uint_t flag) {
-            // { HOLE }
-            // This is a bit sad...
+        void add_move_s_t(
+            bool c,
+            bool pr,
+            Piece sp,
+            // Piece cp,
+            uint8_t si,
+            uint8_t ti,
+            //bool bqcr,
+            //bool bkcr,
+            //bool wqcr,
+            //bool wkcr,
+            uint8_t epi
+            ) {
+
             uint64_t t = 1UL << ti;
             Piece cp;
             if (empty & t) {
@@ -779,6 +779,7 @@ struct Position {
             } else {
                 cp = QUEEN; // by elimination
             }
+            bool bqcr
 
             // We recopy this from the ThreeByteMove comments for reference:
             //  bit range  | mode0 |
