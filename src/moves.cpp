@@ -806,19 +806,31 @@ struct Position {
         }
     }
     void legal_moves(uint16_t *out, uint8_t *moves_written) {
+        // Step 1. Which player is active? (i.e. Whose turn?)
+        bool whitemove = !c();
+        // Take the perspective of the moving player, so
+        // it becomes 'us' vs 'them'.
+        Bitboard & us = whitemove ? white : black;
+        Bitboard & them = whitemove ? black : white;
+        Bitboard empty = ~(us | them);
 
         bool color = c();
 
         std::vector<ThreeByteMove> moves {};
 
-        void add_move_s_t(bool c, bool pr, Piece sp,
-            uint8_t si, uint8_t ti, uint_t flag) {
-            // todo { 1 }
+        void add_move_s_t(bool c, bool pr, Piece sp, uint8_t si, uint8_t ti, uint_t flag) {
+            // pack all the stuff into x
+
+            moves.push_back(ThreeByteMove(x));
         }
 
         void add_move_s_T(bool c, bool pr, Piece sp,
             uint8_t si, Bitboard T, uint_t flag) {
-            // todo { 2 }
+            while (T) {
+                uint8_t ti = ntz(T);
+                T &= T-1;
+                add_move_s_t(c, pr, sp, si, ti, flag);
+            }
         }
 
         Bitboard qr = (queen | rook) & them;
@@ -845,13 +857,6 @@ struct Position {
             // safe!
             return true;
         }
-        // Step 1. Which player is active? (i.e. Whose turn?)
-        bool whitemove = !c();
-        // Take the perspective of the moving player, so
-        // it becomes 'us' vs 'them'.
-        Bitboard & us = whitemove ? white : black;
-        Bitboard & them = whitemove ? black : white;
-        Bitboard empty = ~(us | them);
 
         // Let's do king moves first.
         Bitboard ok = us & king;
