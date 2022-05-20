@@ -379,62 +379,67 @@ enum Piece {
 
 constexpr std::string_view GLYPHS(".PNBRQK");
 
-struct ThreeByteMove {
-    uint8_t c_pr_sp_cp;
-    uint8_t sr_sc_wkcr_wkqr;
-    uint8_t tr_tc_bkcr_bqcr;
-    // 0x17        | c      | 0 if white moving, else 1
+struct Move {
+    uint8_t tc_tr_bqcr_bkcr;
+    uint8_t sc_sr_wqcr_wkcr;
+    uint8_t cp_sp_pr_c;
+    uint8_t epc_epr_zero;
+
+    // 0x00 - 0x02 | tc     | target col idx into abcdefgh
+    // 0x03 - 0x05 | tr     | target row idx into abcdefgh
+    // 0x06        | bqcr   | change black queen castling rights
+    // 0x07        | bkcr   | change black king castling rights
+    // 0x08 - 0x0A | sc     | source col idx into abcdefgh
+    // 0x0B - 0x0D | sr     | source row idx into 87654321
+    // 0x0E        | wqcr   | change white queen castling rights
+    // 0x0F        | wkcr   | change white king castling rights
+    // 0x10 - 0x12 | cp     | capture piece idx into .PNBRQK
+    // 0x13 - 0x15 | sp     | source piece idx into .PNBRQK
     // 0x16        | pr     | promotion bit
-    // 0x13 - 0x15 | sp     | source piece enum index
-    // 0x10 - 0x12 | sr     | source row 12345678
-    // 0x0D - 0x0F | sc     | target col abcdefgh
-    // 0x0A - 0x0C | tr     | target row abcdefgh
-    // 0x07 - 0x09 | tc     | target col
-    // 0x04 - 0x06 | cp     | capture piece enum index
-    // 0x03        | bqcr   | change black queen castling rights
-    // 0x02        | bkcr   | change black king castling rights
-    // 0x01        | wqcr   | change white queen castling rights
-    // 0x00        | wkcr   | change white king castling rights
-    // note: for Ra1xRa8, Ra8xRa1, Rh1xRh8, Rh8xRh1
-    //       qcr and kcr instead are bcr and wcr, which
-    //       indicate which colors lose castling rights
-    //       the side of which can be inferred from the
-    //       RxR move.
-    constexpr ThreeByteMove (){};
-    constexpr ThreeByteMove (uint32_t X) :
-        c_pr_sp_cp(X & 0xFF),
-        sr_sc_wkcr_wkqr((X >> 0x08) & 0xFF),
-        tr_tc_bkcr_bqcr((X >> 0x10) & 0xFF){};
+    // 0x17        | c      | 0 if white moving, else 1
+    // 0x18 - 0x1A | epc    | en passant square col idx into abcdefgh
+    // 0x1B - 0x1D | epr    | en passant square row idx into 87654321
+    // 0x1E - 0x1F | zero   | these bits are always zero
 
-    constexpr bool c() const {return c_pr_sp_cp & 0x01;}
-    constexpr bool pr() const {return c_pr_sp_cp & 0x02;}
-    constexpr uint8_t sp() const {return (c_pr_sp_cp >> 0x02) & 0x07;}
+    // intr
+    constexpr Move (){};
+    constexpr Move (uint32_t X) :
+        tc_tr_bqcr_bkcr(X & 0xFF),
+        sc_sr_wqcr_wkcr((X >> 0x08) & 0xFF),
+        cp_sp_pr_c((X >> 0x10) & 0xFF),
+        epc_epr_zero((X >> 0x18) & 0xFF) {}
+    constexpr Move (uint8_t tc, uint8_t tr, bool bqcr, bool bkcr, uint8_t sc, uint8_t sr, bool wqcr, bool wkcr, uint8_t cp, uint8_t sp, bool pr, bool c, uint8_t epc, uint8_t epr) {
+        tc_tr_bqcr_bkcr = (tc & 0x07) | ((tr & 0x07) << 0x03) | (bqcr << 0x06) | (bkcr << 0x07);
+        sc_sr_wqcr_wkcr = (sc & 0x07) | ((sr & 0x07) << 0x03) | (wqcr << 0x06) | (wkcr << 0x07);
+        cp_sp_pr_c = (cp & 0x07) | ((sp & 0x07) << 0x03) | (pr << 0x06) | (c << 0x07);
+        epi_zero = (epc & 0x07) | ((epr & 0x07) << 0x03);
+    }
+    // elim
+    constexpr uint8_t tc() const {return tc_tr_bqcr_bkcr & 0x07;}
+    constexpr uint8_t tr() const {return (tc_tr_bqcr_bkcr >> 3) & 0x07;}
+    constexpr uint8_t ti() const {return tc_tr_bqcr_bkcr & 0x3F;}
+    constexpr bool bqcr() const {return (tc_tr_bqcr_bkcr & 0x40) != 0;}
+    constexpr bool bkcr() const {return (tc_tr_bqcr_bkcr & 0x80) != 0;}
+    constexpr uint8_t sc() const {return sc_sr_wqcr_wkcr & 0x07;}
+    constexpr uint8_t sr() const {return (sc_sr_wqcr_wkcr >> 3) & 0x07;}
+    constexpr uint8_t si() const {return sc_sr_wqcr_wkcr & 0x3F;}
+    constexpr bool wqcr() const {return (sc_sr_wqcr_wkcr & 0x40) != 0;}
+    constexpr bool wkcr() const {return (sc_sr_wqcr_wkcr & 0x80) != 0;}
     constexpr uint8_t cp() const {return (c_pr_sp_cp >> 0x05) & 0x07;}
+    constexpr uint8_t sp() const {return (c_pr_sp_cp >> 0x02) & 0x07;}
+    constexpr bool pr() const {return c_pr_sp_cp & 0x02;}
+    constexpr bool c() const {return c_pr_sp_cp & 0x01;}
+    constexpr uint8_t epc() const {return epc_epr_zero & 0x07;}
+    constexpr uint8_t epr() const {return (epc_epr_zero >> 3) & 0x07;}
+    constexpr uint8_t epi() const {return epc_epr_zero & 0x3F;}
 
-    constexpr uint8_t si() const {return sr_sc_wkcr_wkqr & 0x3F;}
-    constexpr uint8_t sr() const {return (sr_sc_wkcr_wkqr >> 3) & 0x07;}
-    constexpr uint8_t sc() const {return sr_sc_wkcr_wkqr & 0x07;}
-    constexpr bool wkcr() const {return (sr_sc_wkcr_wkqr & 0x40) != 0;}
-    constexpr bool bkcr() const {return (sr_sc_wkcr_wkqr & 0x80) != 0;}
 
-    constexpr uint8_t ti() const {return tr_tc_bkcr_bqcr & 0x3F;}
-    constexpr uint8_t tr() const {return (tr_tc_bkcr_bqcr >> 3) & 0x07;}
-    constexpr uint8_t tc() const {return tr_tc_bkcr_bqcr & 0x07;}
-    constexpr bool wqcr() const {return (tr_tc_bkcr_bqcr & 0x40) != 0;}
-    constexpr bool bqcr() const {return (tr_tc_bkcr_bqcr & 0x80) != 0;}
-
-    constexpr uint8_t tp() const {return sp();}
-
+    // queries
     constexpr uint64_t s() const {return 1UL << si();}
     constexpr uint64_t t() const {return 1UL << ti();}
     constexpr uint64_t st() const {return s() | t();}
     constexpr uint64_t ui() const {return (tc() << 3) | sr();}
     constexpr uint64_t u() const {return 1UL << ui();}
-
-    constexpr bool ep() const {
-        return (sp() == PAWN) && (sc() != tc()) && (cp() == SPACE);
-    }
-    constexpr bool x() const {return (cp() != SPACE) || ep();}
 
     constexpr bool kcr() const {return wkcr() && bkcr();}
     constexpr bool qcr() const {return wkcr() && bkcr();}
@@ -442,17 +447,12 @@ struct ThreeByteMove {
     constexpr bool bcr() const {return bkcr() && bqcr();}
 
     constexpr bool feasible() const {
+
         // sp must name a glyph
         if (sp() > 6) return false;
 
         // can't move from an empty square
         if (sp() == SPACE) return false;
-
-        // tp must name a glyph
-        if (tp() > 6) return false;
-
-        // tp can't name SPACE
-        if (tp() == SPACE) return false;
 
         // cp must name a glyph
         if (cp() > 6) return false;
@@ -464,17 +464,12 @@ struct ThreeByteMove {
         if ((sc() == tc()) && (sr() == tr())) return false;
 
         // only pawns promote, and it must be properly positioned
-        if ((sp() != tp()) && ((sr() != (c() ? 6 : 1)) || (tr() != (c() ? 7 : 0)) || (sp() != PAWN))) return false;
-
-        // pawns can't promote to space, pawns, or kings
-        if ((sp() != tp()) && ((tp() == SPACE) ||
-            (tp() == PAWN) || (tp() == KING))) return false;
+        // and cannot promote to pawn or king
+        if (pr() && ((sr() != (c() ? 6 : 1)) || (tr() != (c() ? 7 : 0)) || (sp() == PAWN) || (sp() == KING))) return false;
 
         // pawns are never on rank 8 or rank 1 (row 0 or row 7)
         if ((sp() == PAWN) && ((sr() == 0) ||
             (sr() == 7))) return false;
-        if ((tp() == PAWN) && ((tr() == 0) ||
-            (tr() == 7))) return false;
         if ((cp() == PAWN) && ((tr() == 0) ||
             (tr() == 7))) return false;
 
@@ -498,14 +493,6 @@ struct ThreeByteMove {
                 // invalid unless possible en passant
                 if (tr() != (c() ? 5 : 2)) return false;
             }
-        }
-
-        if (pr()) {
-            // can only promote on the endrank
-            if (tr() != (c() ? 7 : 0)) return false;
-            // can only promote to N, B, R, Q
-            if ((tp() == SPACE) || (tp() == PAWN) ||
-                (tp() == KING)) return false;
         }
 
         if (sp() == KNIGHT) {
@@ -580,15 +567,15 @@ struct ThreeByteMove {
         // and similar scenarios, so the cases aren't mutually exclusive.
         // it isn't possible to remove castling rights via a Rf8 x Rh8 because the enemy king would be in check. Similarly for other exceptions
         bool kingmove = (sp() == KING) && (sr() == (c() ? 0 : 7)) && (sc() == 4);
-        bool a1rookcapture = (cp() == ROOK) && (ti() == 56) && !whitemove;
-        bool a8rookcapture = (cp() == ROOK) && (ti() == 0) && whitemove;
-        bool h1rookcapture = (cp() == ROOK) && (ti() == 63) && !whitemove;
-        bool h8rookcapture = (cp() == ROOK) && (ti() == 7) && whitemove;
+        bool a1rookcapture = (cp() == ROOK) && (ti() == 56) && c();
+        bool a8rookcapture = (cp() == ROOK) && (ti() == 0) && !c();
+        bool h1rookcapture = (cp() == ROOK) && (ti() == 63) && c();
+        bool h8rookcapture = (cp() == ROOK) && (ti() == 7) && !c();
 
-        bool a1rookmove = (sp() == ROOK) && (si() == 56) && whitemove && (tc() < 4);
-        bool a8rookmove = (sp() == ROOK) && (si() == 0) && !whitemove && (tc() < 4);
-        bool h1rookmove = (sp() == ROOK) && (si() == 63) && whitemove && (tc() > 4);
-        bool h8rookmove = (sp() == ROOK) && (si() == 7) && !whitemove && (tc() > 4);
+        bool a1rookmove = (sp() == ROOK) && (si() == 56) && !c() && (tc() < 4);
+        bool a8rookmove = (sp() == ROOK) && (si() == 0) && c() && (tc() < 4);
+        bool h1rookmove = (sp() == ROOK) && (si() == 63) && !c() && (tc() > 4);
+        bool h8rookmove = (sp() == ROOK) && (si() == 7) && c() && (tc() > 4);
         if (kcr() && !(kingmove || h1rookmove || h8rookmove)) {
             if (h1rookcapture || h8rookcapture) {
                 // exclude moves implying a king is en prise
@@ -659,14 +646,13 @@ struct Position {
         black ^= rhs.black;
         rights ^= rhs.rights;
     }
-    void play(ThreeByteMove const& tbm) {
+    void play(Move const& tbm) {
         auto c = tbm.c();
         auto si = tbm.si();
         auto ti = tbm.ti();
         auto sc = tbm.sc();
         auto tc = tbm.tc();
         auto sp = tbm.sp();
-        auto tp = tbm.tp();
         auto cp = tbm.cp();
         auto wkcr = tbm.wkcr();
         auto bkcr = tbm.bkcr();
@@ -724,31 +710,26 @@ struct Position {
         }
 
         if ((sp == KING) && (tc == sc + 2)) {
-            rook ^= whitemove ? 0xA000000000000000 :
-                            0x00000000000000A0;
-            us ^= whitemove ? 0xA000000000000000 :
-                          0x00000000000000A0;
+            rook ^= c() ? 0x00000000000000A0 : 0xA000000000000000;
+            us ^= c() ? 0x00000000000000A0 : 0xA000000000000000;
         }
 
         if ((sp == KING) && (tc + 2 == sc)) {
-            rook ^= whitemove ? 0x0900000000000000 :
-                            0x0000000000000009;
-            us ^= whitemove ? 0x0900000000000000 :
-                          0x0000000000000009;
+            rook ^= c() ? 0x0000000000000009 : 0x0900000000000000;
+            us ^= c() ? 0x0000000000000009 : 0x0900000000000000;
         }
     }
     void legal_moves(uint16_t *out, uint8_t *moves_written) {
         // Step 1. Which player is active? (i.e. Whose turn?)
-        bool whitemove = !c();
         // Take the perspective of the moving player, so
         // it becomes 'us' vs 'them'.
-        Bitboard & us = whitemove ? white : black;
-        Bitboard & them = whitemove ? black : white;
+        Bitboard & us = c() ? black : white;
+        Bitboard & them = c() ? white : black;
         Bitboard empty = ~(us | them);
 
         bool color = c();
 
-        std::vector<ThreeByteMove> moves {};
+        std::vector<Move> moves {};
 
         void add_move_s_t(
             bool c,
@@ -779,45 +760,12 @@ struct Position {
             } else {
                 cp = QUEEN; // by elimination
             }
-            bool bqcr
-
-            // We recopy this from the ThreeByteMove comments for reference:
-            //  bit range  | mode0 |
-            // 0x17        | c     | 0 if black to move
-            // 0x14 - 0x16 | sp    | source piece enum index
-            // 0x11 - 0x13 | sr    | source row 87654321
-            // 0x0E - 0x10 | sc    | source col abcdefgh
-            // 0x0B - 0x0D | tr    | target row 87654321
-            // 0x08 - 0x0A | tc    | target col abcdefgh
-            // 0x05 - 0x07 | tp    | target piece enum index
-            // 0x02 - 0x04 | cp    | capture piece enum index
-            // 0x01        | qcr   | change queen castling rights
-            // 0x00        | kcr   | change king castling rights
-
-            // { HOLE }  fix the issue with unnecessary bits in ThreeByteMove
-            //           that aren't useful and complicate capture right
-            //           encoding. sp can be a promotion flag, giving us 2
-            //           bits, so we can do castling rights directly,
-            //           eliminating some logic, i think
-
-            // { HOLE }  we shouldn't use vector, but a fixed array, if it
-            //           my guess is. in fact, there is probably a clever
-            //           data structure we could fit in a fixed array.
-            //           but it seems of limited use. for perft, make a
-            //           new function that counts legal moves instead.
-            //           hmm, that is, replace this function with an
-            //           accumulator that adds one to a register whenever it
-            //           is called. Ah, but then remove some loops.
-            uint32_t x =
-                (c ?  0x800000 : 0x000000) |  // 23
-                (pr ? 0x400000 : 0x000000) |  // 22
-                (tp << 19)                 |  // 19, 20, 21
-                (si << 13)                 |  // 13, 14, 15, 16, 17, 18
-                (ti <<  7)                 |  //  7,  8,  9, 10, 11, 12
-                (cp <<  4)                 |  //  4,  5,  6
-                (flag);                       //  0,  1,  2,  3
-
-            moves.push_back(ThreeByteMove(x));
+            bool c_bqcr = bqcr() && ((si == 4) || (ti == 2) || (si == 0));
+            bool c_bkcr = bkcr() && ((si == 4) || (ti == 7) || (si == 7));
+            bool c_wqcr = wqcr() && ((si == 60) || (ti == 58) || (si == 7));
+            bool c_wkcr = wkcr() && ((si == 60) || (ti == 62) || (si == 63));
+            uint8_t epi = (sp == PAWN) && ((si > ti + 8) || (ti > si + 8))
+            moves.push_back(Move(x));
         }
 
         void add_move_s_T(bool c, bool pr, Piece sp,
@@ -1146,11 +1094,11 @@ struct Position {
     }
 };
 
-std::array<ThreeByteMove,44304> compute_move_table() {
-    std::array<ThreeByteMove,44304> result {};
+std::array<Move,44304> compute_move_table() {
+    std::array<Move,44304> result {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = ThreeByteMove(i);
+        auto tbm = Move(i);
         if (tbm.feasible()) result[j++] = tbm;
     }
     return result;
@@ -1159,7 +1107,7 @@ std::array<Position,44304> compute_posmove_table() {
     std::array<Position,44304> result {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = ThreeByteMove(i);
+        auto tbm = Move(i);
         if (tbm.feasible()){
           Position p;
           p.play(p);
@@ -1175,7 +1123,7 @@ std::array<uint16_t,16777216> compute_lookup_table() {
     std::array<uint32_t,44304> movetable {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = ThreeByteMove(i);
+        auto tbm = Move(i);
         if (tbm.feasible()) movetable[j++] = i;
     }
     std::array<uint16_t,16777216> result {};
@@ -1187,7 +1135,7 @@ std::array<uint16_t,16777216> compute_lookup_table() {
     }
     return result;
 }
-std::array<ThreeByteMove,44304> MOVETABLE = compute_move_table();
+std::array<Move,44304> MOVETABLE = compute_move_table();
 std::array<Position,44304> POSMOVETABLE = compute_posmove_table();
 std::array<uint16_t,16777216> LOOKUP = compute_lookup_table();
 void moves_csv_to_stdout() {
@@ -1200,14 +1148,14 @@ void moves_csv_to_stdout() {
     uint32_t kcnt = 0;
     std::cout << "turn, sp, sc, sr, tp, tc, tr, cp, wkcr, wqcr, bkcr, bqcr\n";
     for ( uint32_t i = 0; i < 256*256*256; ++i) {
-        ThreeByteMove tbm(i);
+        Move tbm(i);
         if (tbm.feasible()) {
             std::cout <<
                 (tbm.c() ? "b" : "w") <<
+                (tbm.pr() ? "*" : "-") <<
                 GLYPHS[tbm.sp()] <<
                 char('a'+tbm.sc()) <<
                 (8-tbm.sr()) <<
-                GLYPHS[tbm.tp()] <<
                 char('a'+tbm.tc()) <<
                 (8-tbm.tr()) <<
                 GLYPHS[tbm.cp()] <<
