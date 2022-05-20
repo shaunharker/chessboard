@@ -843,8 +843,8 @@ struct Position {
             for (auto const& [i, step] : enumerate(translations)) {
                 constexpr auto const& f = hashes[i];
                 Bitboard tx = (i < 4) ? qr : qb;
-                auto [checker, pinned] = CAP[(f(them)<<14)|(f(us)<<7)|f(tx)];
-                if (checker != 0 && pinned == 0) return false;
+                auto [checker, pin] = CAP[(f(them)<<14)|(f(us)<<7)|f(tx)];
+                if (checker != 0 && pin == 0) return false;
             }
             // knight threats
             Bitboard nt = knightthreats(oki) & knight & them;
@@ -890,14 +890,14 @@ struct Position {
         for (auto const& [i, step] : enumerate(translations)) {
             auto const& f = hashes[i];
             Bitboard const& tx = (i < 4) ? qr : qb;
-            auto [checker, pinned] = CAP[(f(them)<<14)|(f(us)<<7)|f(tx)];
+            auto [checker, pin] = CAP[(f(them)<<14)|(f(us)<<7)|f(tx)];
             if (checker != 0) {
-               if(pinned == 0) {
+               if(pin == 0) {
                  num_checks += 1;
                  uint8_t ci = oki + step * (checker + 1);
-                 targets &= INTERPOSITIONS[oki | (ci << 6)];  // { 3 }
+                 targets &= INTERPOSITIONS[oki | (ci << 6)];  // { 0 }
                } else {
-                 pinned |= 1UL << (oki + step * (pinned + 1));
+                 pinned |= 1UL << (oki + step * (pin + 1));
                }
                // maybe +1's can be removed along with other shifts elsewhere
             }
@@ -928,7 +928,38 @@ struct Position {
             auto si = ntz(S);
             S &= S-1;
             if ((1UL << si) & pinned) {
-                // TODO: deal with pinned queen case { 4 }
+                uint8_t sc = si & 7;
+                uint8_t sr = si >> 3;
+                if (sr < row) {
+                    if (sc < col) {
+                        Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
+                        add_s_T(c(), false, QUEEN, si, D & bishopthreats(si, empty) & not_us);
+                    } else if (sc == col) {
+                        Bitboard F = file_a << sc;
+                        add_s_T(c(), false, QUEEN, si, F & rookthreats(si, empty) & not_us);
+                    } else {
+                        Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
+                        add_s_T(c(), false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
+                    }
+                } else if (sr == row) {
+                    Bitboard R = rank_8 << (8*row);
+                    if (sc < col) {
+                        add_s_T(c(), false, QUEEN, si, R & rookthreats(si, empty) & not_us);
+                    } else { // sc > col  (the other case is impossible)
+                        add_s_T(c(), false, QUEEN, si, R & rookthreats(si, empty) & not_us);
+                    }
+                } else {
+                    if (sc < col) {
+                        Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
+                        add_s_T(c(), false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
+                    } else if (sc == col) {
+                        Bitboard F = file_a << sc;
+                        add_s_T(c(), false, QUEEN, si, A & rookthreats(si, empty) & not_us);
+                    } else {
+                        Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
+                        add_s_T(c(), false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
+                    }
+                }
             } else {
               add_s_T(c(), false, QUEEN, si, rookthreats(si, empty) & not_us);
               add_s_T(c(), false, QUEEN, si, bishopthreats(si, empty) & not_us);
@@ -941,9 +972,17 @@ struct Position {
             auto si = ntz(S);
             S &= S-1;
             if ((1UL << si) & pinned) {
-                // TODO: deal with pinned rook case { 5 }
+                uint8_t sc = si & 7;
+                uint8_t sr = si >> 3;
+                if (sc == col) {
+                    Bitboard F = file_a << col;
+                    add_s_T(c(), false, ROOK, si, F & rookthreats(si, empty) & not_us);
+                } else { // sr == row
+                    Bitboard R = rank_8 << (8*row);
+                    add_s_T(c(), false, ROOK, si, R & rookthreats(si, empty) & not_us);
+                }
             } else {
-                add(si, false, rookthreats(si, empty) & not_us, MOVE_R);
+                add_s_T(c(), false, ROOK, si, rookthreats(si, empty) & not_us);
             }
         }
 
@@ -953,9 +992,17 @@ struct Position {
             auto si = ntz(S);
             S &= S-1;
             if ((1UL << si) & pinned) {
-                // TODO: deal with pinned bishop case { 6 }
+                uint8_t sc = si & 7;
+                uint8_t sr = si >> 3;
+                if (sc + sr == row + col) {
+                    Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
+                    add_s_T(c(), false, BISHOP, si, A & bishopthreats(si, empty) & not_us);
+                } else { // sr - sc == row - col
+                    Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
+                    add_s_T(c(), false, BISHOP, si, D & bishopthreats(si, empty) & not_us);
+                }
             } else {
-                add(si, false, bishopthreats(si, empty) & not_us, MOVE_B);
+                add_s_T(c(), false, BISHOP, si, bishopthreats(si, empty) & not_us);
             }
         }
 
@@ -971,7 +1018,7 @@ struct Position {
         Bitboard our_pawns = pawn & us;
         Bitboard T = empty & (color ? (our_pawns << 8) : (our_pawns >> 8));
         while (T) {
-          // TODO: deal with pinned pawn for this case { 7 }
+          // TODO: deal with pinned pawn for this case { 1 }
           auto ti = ntz(T);
           T &= T-1;
           Square si = ti - (color ? 8 : -8);
@@ -988,7 +1035,7 @@ struct Position {
         // Pawn captures (except en passant)
         T = pawnthreats(our_pawns, color) & them;
         while (T) {
-          // TODO: deal with pinned pawn for this case { 8 }
+          // TODO: deal with pinned pawn for this case { 2 }
           auto ti = ntz(T);
           T &= T-1;
           Bitboard t = 1UL << ti;
@@ -1013,7 +1060,7 @@ struct Position {
         T = empty & (color ? ((S << 16) & (empty << 8))
                            : ((S >> 16) & (empty >> 8)));
         while (T) {
-          // TODO: deal with pinned pawn for this case { 9 }
+          // TODO: deal with pinned pawn for this case { 3 }
           auto ti = ntz(T);
           T &= T-1;
           Square si = ti - (color ? 16 : -16);
@@ -1028,7 +1075,7 @@ struct Position {
                 auto si = ntz(S);
                 S &= S-1;
 
-                // !! ATTENTION !! { 10 }
+                // !! ATTENTION !! { 4 }
 
                 // there is a crazy corner case not dealt with here
                 //   pp.p
