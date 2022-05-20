@@ -360,10 +360,10 @@ Bitboard const& kingthreats(Square i) {
   return KINGTHREATS[i];
 }
 Bitboard pawnthreats(Bitboard const& X, bool color) {
-  constexpr Bitboard not_file_a = ~file_a;
-  constexpr Bitboard not_file_h = ~file_h;
-  return color ? (((not_file_a & X) << 7) | ((not_file_h & X) << 9)) :
-    (((not_file_h & X) >> 7) | ((not_file_a & X) >> 9));
+    constexpr Bitboard not_file_a = ~file_a;
+    constexpr Bitboard not_file_h = ~file_h;
+    return color ? (((not_file_a & X) << 7) | ((not_file_h & X) << 9)) :
+      (((not_file_h & X) >> 7) | ((not_file_a & X) >> 9));
 }
 
 // Part II. The Move Representations
@@ -380,127 +380,67 @@ enum Piece {
 constexpr std::string_view GLYPHS(".PNBRQK");
 
 struct ThreeByteMove {
-    uint32_t X;
-    //  bit range  | mode0 |
-    // 0x17        | c     | ply % 2
-    // 0x14 - 0x16 | sp    | source piece enum index
-    // 0x11 - 0x13 | sr    | source row 87654321
-    // 0x0E - 0x10 | sc    | source col abcdefgh
-    // 0x0B - 0x0D | tr    | target row 87654321
-    // 0x08 - 0x0A | tc    | target col abcdefgh
-    // 0x05 - 0x07 | tp    | target piece enum index
-    // 0x02 - 0x04 | cp    | capture piece enum index
-    // 0x01        | qcr   | change queen castling rights
-    // 0x00        | kcr   | change king castling rights
+    uint8_t c_pr_sp_cp;
+    uint8_t sr_sc_wkcr_wkqr;
+    uint8_t tr_tc_bkcr_bqcr;
+    // 0x17        | c      | 0 if white moving, else 1
+    // 0x16        | pr     | promotion bit
+    // 0x13 - 0x15 | sp     | source piece enum index
+    // 0x10 - 0x12 | sr     | source row 12345678
+    // 0x0D - 0x0F | sc     | target col abcdefgh
+    // 0x0A - 0x0C | tr     | target row abcdefgh
+    // 0x07 - 0x09 | tc     | target col
+    // 0x04 - 0x06 | cp     | capture piece enum index
+    // 0x03        | bqcr   | change black queen castling rights
+    // 0x02        | bkcr   | change black king castling rights
+    // 0x01        | wqcr   | change white queen castling rights
+    // 0x00        | wkcr   | change white king castling rights
     // note: for Ra1xRa8, Ra8xRa1, Rh1xRh8, Rh8xRh1
     //       qcr and kcr instead are bcr and wcr, which
     //       indicate which colors lose castling rights
     //       the side of which can be inferred from the
     //       RxR move.
-    constexpr ThreeByteMove ():X(0){};
-    constexpr ThreeByteMove (uint32_t X):X(X){};
-    constexpr bool c() const {return X & 0x800000;}
-    constexpr uint8_t sp() const {return (X >> 0x14) & 0x07;}
-    constexpr uint8_t si() const {return (X >> 0x0E) & 0x3F;}
-    constexpr uint8_t ti() const {return (X >> 0x08) & 0x3F;}
-    constexpr uint8_t tp() const {return (X >> 0x05) & 0x07;}
-    constexpr uint8_t cp() const {return (X >> 0x02) & 0x07;}
-    constexpr bool wkrr() const {
-      return (sp() == ROOK) && (cp() == ROOK) && (
-       (si() == 63) && (ti() == 7)) && !c();
-    }
-    constexpr bool bkrr() const {
-      return (sp() == ROOK) && (cp() == ROOK) && (
-       (si() == 7) && (ti() == 63)) && c();
-    }
-    constexpr bool wqrr() const {
-      return (sp() == ROOK) && (cp() == ROOK) && (
-       (si() == 56) && (ti() == 0)) && !c();
-    }
-    constexpr bool bqrr() const {
-      return (sp() == ROOK) && (cp() == ROOK) && (
-       (si() == 0) && (ti() == 56)) && c();
-    }
-    constexpr bool rr() const {
-      return wkrr() || bkrr() || wqrr() || bqrr();
-    }
-    constexpr bool qcr() const {
-      // in the rr() case we may compute it:
-      if (rr()) return ((X & 0x03) != 0) && (wqrr() || bqrr());
-      // Otherwise it is stored in the 0x02 bit.
-      return X & 0x02;
-    }
-    constexpr bool kcr() const {
-      // in the rr() case we may compute it:
-      if (rr()) return ((X & 0x03) !=0) && (wkrr() || bkrr());
-      // Otherwise it is stored in the 0x01 bit.
-      return X & 0x01;
-    }
-    constexpr bool wcr() const {
-      bool whitemove = !c();
-      // in the rr() case this is stored directly:
-      if (rr()) return X & 0x01;
-      // if no rights are lost then false:
-      if (!kcr() && !qcr()) return false;
-      // if both rights are lost then it must
-      // be a castling or a king move; just
-      // return whose turn it is:
-      if (kcr() && qcr()) return whitemove;
-      // a move from the king home square
-      // never removes the enemies castling right
-      // so, the removed right must be white's in
-      // that case:
-      if (si() == 60) return true;
-      // we know the move isn't RxR, so:
-      if ((sp() == ROOK) && ((si() == 56) || (si() == 63)))
-        return true;
-      // we know the move isn't RxR, so:
-      if ((cp() == ROOK) && ((ti() == 56) || (ti() == 63)))
-        return true;
-      // still here?
-      return false;
-    }
-    constexpr bool bcr() const {
-      bool whitemove = !c();
-      // in the rr() case this is stored directly:
-      if (rr()) return X & 0x02;
-      // if no rights are lost then false:
-      if (!kcr() && !qcr()) return false;
-      // if both rights are lost then it must
-      // be a castling or a king move; just
-      // return whose turn it is:
-      if (kcr() && qcr()) return !whitemove;
-      // a move from the king home square
-      // never removes the enemies castling right
-      // so, the removed right must be black's in
-      // that case:
-      if (si() == 4) return true;
-      // we know the move isn't RxR, so:
-      if ((sp() == ROOK) && ((si() == 0) || (si() == 7)))
-        return true;
-      // we know the move isn't RxR, so:
-      if ((cp() == ROOK) && ((ti() == 0) || (ti() == 7)))
-        return true;
-      // still here?
-      return false;
-    }
+    constexpr ThreeByteMove (){};
+    constexpr ThreeByteMove (uint32_t X) :
+        c_pr_sp_cp(X & 0xFF),
+        sr_sc_wkcr_wkqr((X >> 0x08) & 0xFF),
+        tr_tc_bkcr_bqcr((X >> 0x10) & 0xFF){};
+
+    constexpr bool c() const {return c_pr_sp_cp & 0x01;}
+    constexpr bool pr() const {return c_pr_sp_cp & 0x02;}
+    constexpr uint8_t sp() const {return (c_pr_sp_cp >> 0x02) & 0x07;}
+    constexpr uint8_t cp() const {return (c_pr_sp_cp >> 0x05) & 0x07;}
+
+    constexpr uint8_t si() const {return sr_sc_wkcr_wkqr & 0x3F;}
+    constexpr uint8_t sr() const {return (sr_sc_wkcr_wkqr >> 3) & 0x07;}
+    constexpr uint8_t sc() const {return sr_sc_wkcr_wkqr & 0x07;}
+    constexpr bool wkcr() const {return (sr_sc_wkcr_wkqr & 0x40) != 0;}
+    constexpr bool bkcr() const {return (sr_sc_wkcr_wkqr & 0x80) != 0;}
+
+    constexpr uint8_t ti() const {return tr_tc_bkcr_bqcr & 0x3F;}
+    constexpr uint8_t tr() const {return (tr_tc_bkcr_bqcr >> 3) & 0x07;}
+    constexpr uint8_t tc() const {return tr_tc_bkcr_bqcr & 0x07;}
+    constexpr bool wqcr() const {return (tr_tc_bkcr_bqcr & 0x40) != 0;}
+    constexpr bool bqcr() const {return (tr_tc_bkcr_bqcr & 0x80) != 0;}
+
+    constexpr uint8_t tp() const {return sp();}
+
     constexpr uint64_t s() const {return 1UL << si();}
     constexpr uint64_t t() const {return 1UL << ti();}
     constexpr uint64_t st() const {return s() | t();}
     constexpr uint64_t ui() const {return (tc() << 3) | sr();}
     constexpr uint64_t u() const {return 1UL << ui();}
-    constexpr uint8_t sr() const {return si() >> 3;}
-    constexpr uint8_t sc() const {return si() & 0x07;}
-    constexpr uint8_t tr() const {return ti() >> 3;}
-    constexpr uint8_t tc() const {return ti() & 0x07;}
+
     constexpr bool ep() const {
         return (sp() == PAWN) && (sc() != tc()) && (cp() == SPACE);
     }
     constexpr bool x() const {return (cp() != SPACE) || ep();}
-    constexpr bool wkcr() const {return wcr() && kcr();}
-    constexpr bool bkcr() const {return bcr() && kcr();}
-    constexpr bool wqcr() const {return wcr() && qcr();}
-    constexpr bool bqcr() const {return bcr() && qcr();}
+
+    constexpr bool kcr() const {return wkcr() && bkcr();}
+    constexpr bool qcr() const {return wkcr() && bkcr();}
+    constexpr bool wcr() const {return wkcr() && wqcr();}
+    constexpr bool bcr() const {return bkcr() && bqcr();}
+
     constexpr bool feasible() const {
         // determine if move could happen in play
         bool whitemove = !c();
@@ -706,7 +646,10 @@ struct Position {
     constexpr bool bkcr() const {return rights & 8;}
     constexpr bool bqcr() const {return rights & 16;}
     constexpr bool epi() const {
-      return (c() ? (2 << 5) : (5 << 5)) | (rights >> 5);
+        return (c() ? (2 << 5) : (5 << 5)) | (rights >> 5);
+    }
+    constexpr bool epc() const {
+        return rights >> 5;
     }
     void play(Position rhs) {
         pawn ^= rhs.pawn;
@@ -818,8 +761,60 @@ struct Position {
 
         std::vector<ThreeByteMove> moves {};
 
-        void add_move_s_t(bool c, bool pr, Piece sp, uint8_t si, uint8_t ti, uint_t flag) {
-            // pack all the stuff into x
+        void add_move_s_t(bool c, bool pr, Piece tp, uint8_t si, uint8_t ti, uint_t flag) {
+            // { HOLE }
+            // This is a bit sad...
+            uint64_t t = 1UL << ti;
+            Piece cp;
+            if (empty & t) {
+                cp = SPACE;
+            } else if (pawn & t) {
+                cp = PAWN;
+            } else if (knight & t) {
+                cp = KNIGHT;
+            } else if (bishop & t) {
+                cp = BISHOP;
+            } else if (rook & t) {
+                cp = ROOK;
+            } else {
+                cp = QUEEN; // by elimination
+            }
+
+            // We recopy this from the ThreeByteMove comments for reference:
+            //  bit range  | mode0 |
+            // 0x17        | c     | 0 if black to move
+            // 0x14 - 0x16 | sp    | source piece enum index
+            // 0x11 - 0x13 | sr    | source row 87654321
+            // 0x0E - 0x10 | sc    | source col abcdefgh
+            // 0x0B - 0x0D | tr    | target row 87654321
+            // 0x08 - 0x0A | tc    | target col abcdefgh
+            // 0x05 - 0x07 | tp    | target piece enum index
+            // 0x02 - 0x04 | cp    | capture piece enum index
+            // 0x01        | qcr   | change queen castling rights
+            // 0x00        | kcr   | change king castling rights
+
+            // { HOLE }  fix the issue with unnecessary bits in ThreeByteMove
+            //           that aren't useful and complicate capture right
+            //           encoding. sp can be a promotion flag, giving us 2
+            //           bits, so we can do castling rights directly,
+            //           eliminating some logic, i think
+
+            // { HOLE }  we shouldn't use vector, but a fixed array, if it
+            //           my guess is. in fact, there is probably a clever
+            //           data structure we could fit in a fixed array.
+            //           but it seems of limited use. for perft, make a
+            //           new function that counts legal moves instead.
+            //           hmm, that is, replace this function with an
+            //           accumulator that adds one to a register whenever it
+            //           is called. Ah, but then remove some loops.
+            uint32_t x =
+                (c ?  0x800000 : 0x000000) |  // 23
+                (pr ? 0x400000 : 0x000000) |  // 22
+                (tp << 19)                 |  // 19, 20, 21
+                (si << 13)                 |  // 13, 14, 15, 16, 17, 18
+                (ti <<  7)                 |  //  7,  8,  9, 10, 11, 12
+                (cp <<  4)                 |  //  4,  5,  6
+                (flag);                       //  0,  1,  2,  3
 
             moves.push_back(ThreeByteMove(x));
         }
@@ -861,17 +856,17 @@ struct Position {
         // Let's do king moves first.
         Bitboard ok = us & king;
         uint8_t oki = ntz(ok);
-        uint8_t row = oki >> 3;
-        uint8_t col = oki & 0x07;
-        auto S = kingthreats(oki) & ~us;
+        uint8_t okr = oki >> 3;
+        uint8_t okc = oki & 0x07;
         // take our king off the board
         us ^= ok;
         king ^= ok;
         // loop through the possibilities
+        auto S = kingthreats(oki) & ~us;
         while (S) {
-          uint8_t si = ntz(S);
-          if (!check(ni)) add_move(c(), false, KING, oki, ni);
-          S &= (S-1);
+            uint8_t si = ntz(S);
+            S &= (S-1);
+            if (!check(si)) add_move(c(), false, KING, oki, si);
         }
         // put the king back on the board
         us ^= ok;
@@ -895,7 +890,7 @@ struct Position {
                if(pin == 0) {
                  num_checks += 1;
                  uint8_t ci = oki + step * (checker + 1);
-                 targets &= INTERPOSITIONS[oki | (ci << 6)];  // { 0 }
+                 targets &= INTERPOSITIONS[oki | (ci << 6)];  // { HOLE }
                } else {
                  pinned |= 1UL << (oki + step * (pin + 1));
                }
@@ -906,16 +901,18 @@ struct Position {
         S = knightthreats(oki) & knight & them;
         num_checks += popcount(S);
         while (S) {
-          targets &= (1UL << ntz(S));
+          uint8_t si = ntz(S);
           S &= S - 1;
+          targets &= (1UL << si);
         }
 
         // pawn checks
         S = pawnthreats(ok, c()) & pawn & them;
         num_checks += popcount(pt);
         while (S) {
-          targets &= (1UL << ntz(S));
+          uint8_t si = ntz(S);
           S &= S - 1;
+          targets &= (1UL << si);
         }
 
         if (targets == 0) return moves;
@@ -930,39 +927,22 @@ struct Position {
             if ((1UL << si) & pinned) {
                 uint8_t sc = si & 7;
                 uint8_t sr = si >> 3;
-                if (sr < row) {
-                    if (sc < col) {
-                        Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
-                        add_s_T(c(), false, QUEEN, si, D & bishopthreats(si, empty) & not_us);
-                    } else if (sc == col) {
-                        Bitboard F = file_a << sc;
-                        add_s_T(c(), false, QUEEN, si, F & rookthreats(si, empty) & not_us);
-                    } else {
-                        Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
-                        add_s_T(c(), false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
-                    }
-                } else if (sr == row) {
-                    Bitboard R = rank_8 << (8*row);
-                    if (sc < col) {
-                        add_s_T(c(), false, QUEEN, si, R & rookthreats(si, empty) & not_us);
-                    } else { // sc > col  (the other case is impossible)
-                        add_s_T(c(), false, QUEEN, si, R & rookthreats(si, empty) & not_us);
-                    }
-                } else {
-                    if (sc < col) {
-                        Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
-                        add_s_T(c(), false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
-                    } else if (sc == col) {
-                        Bitboard F = file_a << sc;
-                        add_s_T(c(), false, QUEEN, si, A & rookthreats(si, empty) & not_us);
-                    } else {
-                        Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
-                        add_s_T(c(), false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
-                    }
+                if (sc == okc) {
+                    Bitboard F = file_a << sc;
+                    add_s_T(c(), false, QUEEN, si, F & rookthreats(si, empty) & not_us);
+                } else if (sr == okr) {
+                    Bitboard R = rank_8 << (8*sr);
+                    add_s_T(c(), false, QUEEN, si, R & rookthreats(si, empty) & not_us);
+                } else if ((sr + sc) == (okr + okc)) {
+                    Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
+                    add_s_T(c(), false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
+                } else { // sr - sc == okr - okc
+                    Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
+                    add_s_T(c(), false, QUEEN, si, D & bishopthreats(si, empty) & not_us);
                 }
             } else {
-              add_s_T(c(), false, QUEEN, si, rookthreats(si, empty) & not_us);
-              add_s_T(c(), false, QUEEN, si, bishopthreats(si, empty) & not_us);
+                add_s_T(c(), false, QUEEN, si, rookthreats(si, empty) & not_us);
+                add_s_T(c(), false, QUEEN, si, bishopthreats(si, empty) & not_us);
             }
         }
 
@@ -974,11 +954,11 @@ struct Position {
             if ((1UL << si) & pinned) {
                 uint8_t sc = si & 7;
                 uint8_t sr = si >> 3;
-                if (sc == col) {
+                if (sc == okc) {
                     Bitboard F = file_a << col;
                     add_s_T(c(), false, ROOK, si, F & rookthreats(si, empty) & not_us);
-                } else { // sr == row
-                    Bitboard R = rank_8 << (8*row);
+                } else { // sr == okr
+                    Bitboard R = rank_8 << (8*okr);
                     add_s_T(c(), false, ROOK, si, R & rookthreats(si, empty) & not_us);
                 }
             } else {
@@ -994,10 +974,10 @@ struct Position {
             if ((1UL << si) & pinned) {
                 uint8_t sc = si & 7;
                 uint8_t sr = si >> 3;
-                if (sc + sr == row + col) {
+                if (sc + sr == okr + okc) {
                     Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
                     add_s_T(c(), false, BISHOP, si, A & bishopthreats(si, empty) & not_us);
-                } else { // sr - sc == row - col
+                } else { // sr - sc == okr - okc
                     Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
                     add_s_T(c(), false, BISHOP, si, D & bishopthreats(si, empty) & not_us);
                 }
@@ -1018,10 +998,11 @@ struct Position {
         Bitboard our_pawns = pawn & us;
         Bitboard T = empty & (color ? (our_pawns << 8) : (our_pawns >> 8));
         while (T) {
-          // TODO: deal with pinned pawn for this case { 1 }
           auto ti = ntz(T);
           T &= T-1;
           Square si = ti - (color ? 8 : -8);
+          Bitboard s = 1UL << si;
+          if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
           if ((1UL << ti) & endrank) {
             add_s_t(c(), true, QUEEN, si, ti);
             add_s_t(c(), true, ROOK, si, ti);
@@ -1035,7 +1016,6 @@ struct Position {
         // Pawn captures (except en passant)
         T = pawnthreats(our_pawns, color) & them;
         while (T) {
-          // TODO: deal with pinned pawn for this case { 2 }
           auto ti = ntz(T);
           T &= T-1;
           Bitboard t = 1UL << ti;
@@ -1043,6 +1023,19 @@ struct Position {
           while (S) {
             auto si = ntz(S);
             S &= S-1;
+            Bitboard s = 1UL << si;
+            if (s & pinned) {
+                uint8_t sc = si & 0x07;
+                uint8_t sr = si >> 3;
+                if ((sc == okc) || (sr == okr)) continue;
+                uint8_t tc = ti & 0x07;
+                uint8_t tr = ti >> 3;
+                if ((sr + sc) == (okr + okc)) {
+                    if ((sr + sc) != (tr + tc)) continue;
+                } else { // sr - sc == okr - okc
+                    if ((sr + sc) == (tr + tc)) continue;
+                }
+            }
             if (t & endrank) {
               add_s_t(c(), true, QUEEN, si, ti);
               add_s_t(c(), true, ROOK, si, ti);
@@ -1060,29 +1053,67 @@ struct Position {
         T = empty & (color ? ((S << 16) & (empty << 8))
                            : ((S >> 16) & (empty >> 8)));
         while (T) {
-          // TODO: deal with pinned pawn for this case { 3 }
-          auto ti = ntz(T);
-          T &= T-1;
-          Square si = ti - (color ? 16 : -16);
-          add_s_t(c(), false, PAWN, si, ti, si & 0x07);
+            auto ti = ntz(T);
+            T &= T-1;
+            Square si = ti - (color ? 16 : -16);
+            Bitboard s = 1UL << si;
+            if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
+            add_s_t(c(), false, PAWN, si, ti, si & 0x07);
         }
 
+        // A discovered check cannot be countered with
+        // an en passant capture. ~The More You Know~
+
         // En Passant
-        if (epi() < 8) {
+        if (epc() < 8) { // { HOLE } define epc above
             Bitboard ep = 1UL << epi();
             S = pawnthreats(ep, !color) & our_pawns;
             while (S) {
                 auto si = ntz(S);
                 S &= S-1;
-
-                // !! ATTENTION !! { 4 }
-
-                // there is a crazy corner case not dealt with here
-                //   pp.p
-                //   ....
-                //   rPpK
-
-                add_s_t(c(), false, PAWN, si, epi(), 8);
+                //  Here we handle missed pawn pins of
+                //  the following forms:
+                //
+                //   pp.p    White is prevented from
+                //   ..v.    en passant capture.
+                //   rPpK  <-- row 4 = rank 5
+                //
+                //
+                //   RpPk  <-- row 5 = rank 4
+                //   ..^.    Black is prevented from
+                //   PP.P    en passant capture.
+                //
+                //  (the v and ^ indicate ep square)
+                uint8_t row = c() ? 4 : 3;
+                bool pin = false;
+                if (okr == row) {
+                    auto R = (rook & them & (rank_8 << (8*row));
+                    while (R) {
+                        auto ri = ntz(R);
+                        R &= R-1;
+                        // Notice that
+                        //   bool expr = ((a < b) && (b <= c)) ||
+                        //               ((c < b) && (b <= a));
+                        // is equivalent to
+                        //   bool expr = (a < b) == (b <= c);
+                        if ((ri < si) == (si < oki)) {
+                            uint8_t cnt = 0;
+                            if (ri < oki) {
+                                for (uint64_t x = (1UL << ri); x <<= 1;
+                                    x != ok) {
+                                    if (x & empty == 0) cnt += 1;
+                                }
+                            } else { // ri > oki
+                                for (uint64_t x = (1UL << oki); x <<= 1;
+                                    x != (1UL << ri)) {
+                                    if (x & empty == 0) cnt += 1;
+                                }
+                            }
+                            if (cnt == 3) pin = true; // the prohibited case
+                        }
+                    }
+                }
+                if (!pin) add_s_t(c(), false, PAWN, si, epi(), 8);
             }
         }
 
