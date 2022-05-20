@@ -72,62 +72,19 @@ std::ostream & operator << (std::ostream & stream, Vizboard x) {
 // consisting of one Square, can be constructed from
 // a Square via the power of two operation.
 constexpr auto twopow = [](Square x){return Bitboard(1) << x;};
-
-// number of trailing zeros.
 constexpr uint8_t popcount(Bitboard x) {
+  // number of one bits
   return __builtin_popcountll(x);
 }
-
-// number of trailing zeros.
 constexpr uint8_t nlz(Bitboard x) {
+  // number of leading zeros
   return __builtin_clzll(x);
 }
-
 constexpr uint8_t ntz(Bitboard x) {
+  // number of trailing zeros
   return __builtin_ctzll(x);
-  // famous bithack:
-  // constexpr std::array<Square,64> debruijn
-  //     {0, 47,  1, 56, 48, 27,  2, 60,
-  //     57, 49, 41, 37, 28, 16,  3, 61,
-  //     54, 58, 35, 52, 50, 42, 21, 44,
-  //     38, 32, 29, 23, 17, 11,  4, 62,
-  //     46, 55, 26, 59, 40, 36, 15, 53,
-  //     34, 51, 20, 43, 31, 22, 10, 45,
-  //     25, 39, 14, 33, 19, 30,  9, 24,
-  //     13, 18,  8, 12,  7,  6,  5, 63};
-  // return debruijn[(0x03f79d71b4cb0a89*(x^(x-1)))>>58];
 }
-
-
-// We often want to iterate over the sequence
-//  (i, square_to_bitboard(i)) from i = 0, ..., 63,
-// so we produce the following array (i.e. type
-//  std::array<std::pair<Square, Bitboard>, 64>)
 constexpr auto SquareBitboardRelation = enumerate(map(twopow, squares));
-
-// Rooks, Bishops, and Queens are "slider" pieces,
-// and we need to generate masks showing how they
-// can move, starting from any square.
-// Thus, we use the following code to take a bitboard
-// and repeatedly apply a slide translation to it
-// until it becomes zero (indicating the piece(s) have
-// all slid off the board) and OR the results.
-template<typename BoardOp>
-constexpr Bitboard slide(Bitboard x, BoardOp f) {
-  return f(x) | ((f(x) == 0) ? 0 : slide(f(x), f));
-}
-
-template<typename... BoardOps>
-constexpr std::array<uint64_t, 64>
-SliderMask(BoardOps... args) {
-  auto result = std::array<uint64_t, 64>();
-  for (auto [i, x] : SquareBitboardRelation) {
-    for (auto f : {args...}) {
-      result[i] |= slide(x, f);
-    }
-  }
-  return result;
-}
 
 // Special Bitboards
 constexpr Bitboard rank_8       = 0x00000000000000FFUL;
@@ -160,11 +117,11 @@ constexpr auto ene(Bitboard x) -> Bitboard {return e(ne(x));}
 constexpr auto wsw(Bitboard x) -> Bitboard {return w(sw(x));}
 constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x));}
 
-
-// Given a chessboard square i and the Bitboard of empty squares
-// on it's "+"-mask, this function determines those squares
-// a rook or queen is "attacking".
+// a fistful of hash functions
 constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
+    // Given a chessboard square i and the Bitboard of empty squares
+    // on it's "+"-mask, this function determines those squares
+    // a rook or queen is "attacking".
     // E is empty squares intersected with rook "+"-mask
     auto constexpr A = antidiagonal;
     auto constexpr T = rank_8;
@@ -173,11 +130,10 @@ constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     auto Y = (A * (L & (E >> (i & 0b000111)))) >> 56;  // 5
     return (Y << 14) | (X << 6) | i; // 4
 }
-
-// Given a singleton bitboard x and the set of empty squares
-// on it's "x"-mask, this function packages that information
-// into a unique 22-bit key for lookup table access.
 constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
+  // Given a singleton bitboard x and the set of empty squares
+  // on it's "x"-mask, this function packages that information
+  // into a unique 22-bit key for lookup table access.
   // E is empty squares intersected with bishop "X"-mask
   auto row = i >> 3;
   auto col = i & 7;
@@ -190,7 +146,6 @@ constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
   auto Y = (L*(OD&E)) >> 56;
   return (Y << 14) | (X << 6) | i;
 }
-
 constexpr uint8_t bitreverse8(uint8_t x) {
   return __builtin_bitreverse8(x);
 }
@@ -237,6 +192,8 @@ template <uint8_t row, uint8_t col> constexpr uint8_t se_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = nwse_diagonal<row,col>();
     return (((file_a * (x & this_diagonal)) >> 56) << (col+1)) & rank_8;
 };
+
+// table computations
 std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
     // compute checks and pins to the right,
     // that is, least sig bits are closer to king
@@ -274,10 +231,30 @@ std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
     }
     return result;
 }
-std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> cap = compute_cap();
-
-// threat computations
-
+std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> CAP = compute_cap();
+template<typename T> constexpr Bitboard slide(Bitboard x, T f) {
+  // T stands for "translation" and we expect it to be a
+  // uint64_t(uint64_t) function type that translates bitboards.
+  //
+  // Rooks, Bishops, and Queens are "slider" pieces,
+  // and we need to generate masks showing how they
+  // can move, starting from any square.
+  // Thus, we use the following code to take a bitboard
+  // and repeatedly apply a slide translation to it
+  // until it becomes zero (indicating the piece(s) have
+  // all slid off the board) and OR the results.
+  return f(x) | ((f(x) == 0) ? 0 : slide(f(x), f));
+}
+template<typename... Ts> constexpr std::array<uint64_t, 64>
+SliderMask(Ts... args) {
+  auto result = std::array<uint64_t, 64>();
+  for (auto [i, x] : SquareBitboardRelation) {
+    for (auto f : {args...}) {
+      result[i] |= slide(x, f);
+    }
+  }
+  return result;
+}
 constexpr auto ROOKMASK = SliderMask(n, s, w, e);
 constexpr auto BISHOPMASK = SliderMask(nw, sw, ne, se);
 std::vector<Bitboard> computerookthreats(){
@@ -308,7 +285,7 @@ std::vector<Bitboard> computerookthreats(){
   }
   return result;
 }
-std::vector<Bitboard> ROOKTHREATS;
+std::vector<Bitboard> ROOKTHREATS = computerookthreats();
 std::vector<Bitboard> computebishopthreats(){
   auto result = std::vector<Bitboard>(1 << 22);
   for (auto const& [i, x] : SquareBitboardRelation) {
@@ -341,7 +318,7 @@ std::vector<Bitboard> computebishopthreats(){
   }
   return result;
 }
-std::vector<Bitboard> BISHOPTHREATS;
+std::vector<Bitboard> BISHOPTHREATS = computebishopthreats();
 constexpr std::array<Bitboard, 64> computeknightthreats(){
   auto result = std::array<Bitboard, 64>();
   for (auto const& [i, x] : SquareBitboardRelation) {
@@ -364,6 +341,8 @@ constexpr std::array<Bitboard, 64> computekingthreats(){
   return result;
 }
 constexpr std::array<Bitboard, 64> KINGTHREATS = computekingthreats();
+
+// threat queries
 Bitboard const& rookthreats(Square i, Bitboard const& empty) {
   return ROOKTHREATS[rookcollisionfreehash(i, empty & ROOKMASK[i])];
 }
@@ -726,6 +705,9 @@ struct Position {
     constexpr bool wqcr() const {return rights & 4;}
     constexpr bool bkcr() const {return rights & 8;}
     constexpr bool bqcr() const {return rights & 16;}
+    constexpr bool epi() const {
+      return (c() ? (2 << 5) : (5 << 5)) | (rights >> 5);
+    }
     void play(Position rhs) {
         pawn ^= rhs.pawn;
         knight ^= rhs.knight;
@@ -824,39 +806,259 @@ struct Position {
         }
     }
     void legal_moves(uint16_t *out, uint8_t *moves_written) {
-      /*
-      Tools.
-      1. Check for knight, pawn, bishop pins by rook-like attack
-      2. Check for knight, pawn, rook pins by bishop-like attack
-      3. Check for slider-slider pins.
-      4. Check for en passant pins.
-      5. Check for slider-king discovered check
-      6. Check for check, castling through check, castling into check.
-      */
-      // Step 1. Which player is active? (i.e. Whose turn?)
-      bool whitemove = !c();
-      // Take the perspective of the moving player, so
-      // it becomes 'us' vs 'them'.
-      Bitboard & us = whitemove ? white : black;
-      Bitboard & them = whitemove ? black : white;
-      // Step 2. Are we in check?
-      Bitboard ok = us & king;
-      uint8_t oki = ntz(ok);
-      // Step 2.1 Are we in check by a hopper?
-      // 2.2.1 Check for knight attacks
-      //Bitboard knightattacks = KNIGHTMOVES[oki]&them&knight;
-      // 2.2.3 Check for pawn attacks
-      // 2.2.2 Check for slider attacks
-      // Bitboard A = antidiagonal[oki];
-      // Bitboard D = diagonal[oki];
-      // Bitboard F = file[oki];
-      // Bitboard R = rank[oki];
-      Bitboard occupied = white | black;
-      Bitboard bq = bishop | queen;
-      //Bitboard pnrk = pawn | knight | rook | king;
-      Bitboard bqt = bq & them;
-      //Bitboard o = us | (pnrk & them);
-      //A & occupied
+
+        bool color = c();
+
+        std::vector<ThreeByteMove> moves {};
+
+        void add_move_s_t(bool c, bool pr, Piece sp,
+            uint8_t si, uint8_t ti, uint_t flag) {
+            // todo { 1 }
+        }
+
+        void add_move_s_T(bool c, bool pr, Piece sp,
+            uint8_t si, Bitboard T, uint_t flag) {
+            // todo { 2 }
+        }
+
+        Bitboard qr = (queen | rook) & them;
+        Bitboard qb = (queen | bishop) & them;
+        bool check(uint8_t si) {
+            // without removing king from board, determine if si square is chked
+            constexpr auto translations = {-8, 8, -1, 1, -9, -7, 7, 9};
+            constexpr auto const& hashes = {n_hash, s_hash, w_hash, e_hash,
+                nw_hash, ne_hash, sw_hash, se_hash};
+            for (auto const& [i, step] : enumerate(translations)) {
+                constexpr auto const& f = hashes[i];
+                Bitboard tx = (i < 4) ? qr : qb;
+                auto [checker, pinned] = CAP[(f(them)<<14)|(f(us)<<7)|f(tx)];
+                if (checker != 0 && pinned == 0) return false;
+            }
+            // knight threats
+            Bitboard nt = knightthreats(oki) & knight & them;
+            if (nt) return false;
+
+            // pawn threats
+            Bitboard pt = pawnthreats(ok, c()) & pawn & them;
+            if (pt) return false;
+
+            // safe!
+            return true;
+        }
+        // Step 1. Which player is active? (i.e. Whose turn?)
+        bool whitemove = !c();
+        // Take the perspective of the moving player, so
+        // it becomes 'us' vs 'them'.
+        Bitboard & us = whitemove ? white : black;
+        Bitboard & them = whitemove ? black : white;
+        Bitboard empty = ~(us | them);
+
+        // Let's do king moves first.
+        Bitboard ok = us & king;
+        uint8_t oki = ntz(ok);
+        uint8_t row = oki >> 3;
+        uint8_t col = oki & 0x07;
+        auto S = kingthreats(oki) & ~us;
+        // take our king off the board
+        us ^= ok;
+        king ^= ok;
+        // loop through the possibilities
+        while (S) {
+          uint8_t si = ntz(S);
+          if (!check(ni)) add_move(c(), false, KING, oki, ni);
+          S &= (S-1);
+        }
+        // put the king back on the board
+        us ^= ok;
+        king ^= ok;
+
+        // Step 2. Are we in check?
+        Bitboard targets = ~us;
+        Bitboard pinned = uint64_t(0); // idea: init pinned as 'them'
+        uint8_t num_checks = 0;
+
+        Bitboard qr = (queen | rook) & them;
+        Bitboard qb = (queen | bishop) & them;
+        auto translations = {-8, 8, -1, 1, -9, -7, 7, 9};
+        auto const& hashes = {n_hash, s_hash, w_hash, e_hash,
+            nw_hash, ne_hash, sw_hash, se_hash};
+        for (auto const& [i, step] : enumerate(translations)) {
+            auto const& f = hashes[i];
+            Bitboard const& tx = (i < 4) ? qr : qb;
+            auto [checker, pinned] = CAP[(f(them)<<14)|(f(us)<<7)|f(tx)];
+            if (checker != 0) {
+               if(pinned == 0) {
+                 num_checks += 1;
+                 uint8_t ci = oki + step * (checker + 1);
+                 targets &= INTERPOSITIONS[oki | (ci << 6)];  // { 3 }
+               } else {
+                 pinned |= 1UL << (oki + step * (pinned + 1));
+               }
+               // maybe +1's can be removed along with other shifts elsewhere
+            }
+        }
+        // knight checks
+        S = knightthreats(oki) & knight & them;
+        num_checks += popcount(S);
+        while (S) {
+          targets &= (1UL << ntz(S));
+          S &= S - 1;
+        }
+
+        // pawn checks
+        S = pawnthreats(ok, c()) & pawn & them;
+        num_checks += popcount(pt);
+        while (S) {
+          targets &= (1UL << ntz(S));
+          S &= S - 1;
+        }
+
+        if (targets == 0) return moves;
+
+        // Move generation
+
+        // Queen Moves
+        S = queen & us;
+        while (S) {
+            auto si = ntz(S);
+            S &= S-1;
+            if ((1UL << si) & pinned) {
+                // TODO: deal with pinned queen case { 4 }
+            } else {
+              add_s_T(c(), false, QUEEN, si, rookthreats(si, empty) & not_us);
+              add_s_T(c(), false, QUEEN, si, bishopthreats(si, empty) & not_us);
+            }
+        }
+
+        // Rook moves
+        S = rook & us;
+        while (S) {
+            auto si = ntz(S);
+            S &= S-1;
+            if ((1UL << si) & pinned) {
+                // TODO: deal with pinned rook case { 5 }
+            } else {
+                add(si, false, rookthreats(si, empty) & not_us, MOVE_R);
+            }
+        }
+
+        // Bishop moves
+        S = bishop & us;
+        while (S) {
+            auto si = ntz(S);
+            S &= S-1;
+            if ((1UL << si) & pinned) {
+                // TODO: deal with pinned bishop case { 6 }
+            } else {
+                add(si, false, bishopthreats(si, empty) & not_us, MOVE_B);
+            }
+        }
+
+        // Find Knight moves
+        S = knight & us & ~pinned;
+        while (S) {
+          uint8_t si = ntz(S);
+          S &= S-1;
+          add_s_T(c(), false, KNIGHT, si, knightthreats(si) & targets);
+        }
+
+        // Pawn pushes
+        Bitboard our_pawns = pawn & us;
+        Bitboard T = empty & (color ? (our_pawns << 8) : (our_pawns >> 8));
+        while (T) {
+          // TODO: deal with pinned pawn for this case { 7 }
+          auto ti = ntz(T);
+          T &= T-1;
+          Square si = ti - (color ? 8 : -8);
+          if ((1UL << ti) & endrank) {
+            add_s_t(c(), true, QUEEN, si, ti);
+            add_s_t(c(), true, ROOK, si, ti);
+            add_s_t(c(), true, BISHOP, si, ti);
+            add_s_t(c(), true, KNIGHT, si, ti);
+          } else {
+            add_s_t(c(), false, PAWN, si, ti);
+          }
+        }
+
+        // Pawn captures (except en passant)
+        T = pawnthreats(our_pawns, color) & them;
+        while (T) {
+          // TODO: deal with pinned pawn for this case { 8 }
+          auto ti = ntz(T);
+          T &= T-1;
+          Bitboard t = 1UL << ti;
+          S = pawnthreats(t, !color) & our_pawns;
+          while (S) {
+            auto si = ntz(S);
+            S &= S-1;
+            if (t & endrank) {
+              add_s_t(c(), true, QUEEN, si, ti);
+              add_s_t(c(), true, ROOK, si, ti);
+              add_s_t(c(), true, BISHOP, si, ti);
+              add_s_t(c(), true, KNIGHT, si, ti);
+            } else {
+              add_s_t(c(), false, PAWN, si, ti);
+            }
+          }
+        }
+
+        // Double Pawn pushes
+        S = our_pawns & (color ? 0x000000000000FF00UL :
+                                 0x00FF000000000000UL);
+        T = empty & (color ? ((S << 16) & (empty << 8))
+                           : ((S >> 16) & (empty >> 8)));
+        while (T) {
+          // TODO: deal with pinned pawn for this case { 9 }
+          auto ti = ntz(T);
+          T &= T-1;
+          Square si = ti - (color ? 16 : -16);
+          add_s_t(c(), false, PAWN, si, ti, si & 0x07);
+        }
+
+        // En Passant
+        if (epi() < 8) {
+            Bitboard ep = 1UL << epi();
+            S = pawnthreats(ep, !color) & our_pawns;
+            while (S) {
+                auto si = ntz(S);
+                S &= S-1;
+
+                // !! ATTENTION !! { 10 }
+
+                // there is a crazy corner case not dealt with here
+                //   pp.p
+                //   ....
+                //   rPpK
+
+                add_s_t(c(), false, PAWN, si, epi(), 8);
+            }
+        }
+
+
+        // Kingside Castle
+        if (color ? bkcr() : wkcr()) {
+          Bitboard conf = (color ? 240UL : (240UL << 56));
+          if ((us & conf) == (color ? 144UL : (144UL << 56))) {
+            if ((empty & conf) == (color ? 96UL : (96UL << 56))) {
+              if (!check(oki) && !check(oki+1) && !check(oki+2)) {
+                add_s_t(c(), false, KING, oki, oki + 2, 9);
+              }
+            }
+          }
+        }
+
+        // Queenside Castle
+        if (color ? bqcr() : wqcr()) {
+          auto conf = (color ? 31UL : (31UL << 56));
+          if ((us & conf) == (color ? 17UL : (17UL << 56))) {
+            if ((empty & conf) == (color ? 14UL : (14UL << 56))) {
+              if (!check(oki) && !check(oki-1) && !check(oki-2)) {
+                add_s_t(c(), false, KING, oki, oki + 2, 10);
+              }
+            }
+          }
+        }
+        return moves;
     }
 };
 
