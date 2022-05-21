@@ -341,7 +341,51 @@ constexpr std::array<Bitboard, 64> computekingthreats(){
   return result;
 }
 constexpr std::array<Bitboard, 64> KINGTHREATS = computekingthreats();
-
+std::vector<uint64_t> computeinterpositions() {
+    // 64x64 table of bitboards expressing next allowed targets
+    // if the goal is to interpose an attack from s to t.
+    // (note: capture of s is allowed, capture of t is not.)
+    std::vector<uint64_t> result;
+    for (uint8_t si = 0; si < 64; ++ si) {
+        uint8_t sc = si & 7; uint8_t sr = si >> 3;
+        for (uint8_t ti = 0; ti < 64; ++ ti) {
+            uint8_t tc = ti & 7; uint8_t tr = ti >> 3;
+            if (sc == tc) {
+                uint64_t F = 0x1010101010101010 << sc;
+                if (sr < tr) {
+                    result.push_back((F >> (8*(7-tr))) & (F << (8*(sr+1))));
+                } else { // sr >= tr
+                    result.push_back((F >> (8*(8-sr))) & (F << (8*(tr))));
+                }
+            } else if (sr == tr) {
+                uint64_t R = 0x00000000000000FF << (8*sr);
+                if (sc < tc) {
+                    result.push_back(R & (R >> (7-tc)) & (R << (sc+1)));
+                } else { // sr >= tr
+                    result.push_back(R & (R >> (8-sc)) & (R << tc));
+                }
+            } else if (sr + sc == tr + tc) {
+                uint64_t A = (sr + sc < 7) ? (0x0102040810204080 >> (8*(7-sr-sc))) : (0x0102040810204080 << (8*(sr+sc-7)));
+                if (sr < tr) {
+                    result.push_back(A & (A << (7*(sr+1))) & (A >> (7*(7-tr)));
+                } else { // sr >= tr
+                    result.push_back(A & (A << (7*tr)) & (A >> (7*(8-sr))));
+                }
+            } else if (sr + tc == tr + sc) {
+                uint64_t D = (sr < sc) ? (0x8040201008040201 >> (8*(sc-sr))) : (0x8040201008040201 << (8*(sr-sc)));
+                if (sr < tr) {
+                    result.push_back(D & (D << (9*(sr+1))) & (D >> (9*(7-tr)));
+                } else {
+                    result.push_back(D & (D << (9*(tr))) & (D >> (9*(8-sr)));
+                }
+            } else {
+                result.push_back(-1);
+            }
+        }
+    }
+    return result;
+}
+std::vector<Bitboard> INTERPOSITIONS = computeinterpositions();
 // threat queries
 Bitboard const& rookthreats(Square i, Bitboard const& empty) {
   return ROOKTHREATS[rookcollisionfreehash(i, empty & ROOKMASK[i])];
@@ -441,7 +485,9 @@ struct Move {
     constexpr uint64_t st() const {return s() | t();}
     constexpr uint64_t ui() const {return (tc() << 3) | sr();}
     constexpr uint64_t u() const {return 1UL << ui();}
+    constexpr uint8_t cr() const {return (wkcr() ? 0x01 : 0x00) | (wqcr() ? 0x02 : 0x00) | (bkcr() ? 0x04 : 0x00) | (bqcr() ? 0x08 : 0x00);}
 
+    // feasibility (optional? might need it for future tables)
     constexpr bool kcr() const {return wkcr() && bkcr();}
     constexpr bool qcr() const {return wkcr() && bkcr();}
     constexpr bool wcr() const {return wkcr() && wqcr();}
@@ -602,8 +648,13 @@ struct Move {
     }
 };
 
-// PART III. The Position
 struct Position {
+    // We store a chess position with 8 bitboards, two for
+    // colors and six for pieces. We keep castling rights
+    // bitwise in uint8_t cr, the en passant column in
+    // epc_, whether a double push occurred last move in
+    // ep_, and the active color in c_:
+
     Bitboard pawn; // 0 for empty, 1 for pawns
     Bitboard knight; // 0 for empty, 1 for knights
     Bitboard bishop; // 0 for empty, 1 for bishops
@@ -613,10 +664,10 @@ struct Position {
     Bitboard white; // 0 for empty, 1 for white pieces
     Bitboard black; // 0 for empty, 1 for black pieces
     uint8_t cr; // castling rights. bit 0 1 2 3 ~ wk wq bk bq
-    uint8_t epc_; // 8 if last move not en passant, else col of double push
-    bool ep_;
+    uint8_t epc_; // if ep_, col of last double push; else 0
+    bool ep_; // 1 if last move was double push
     bool c_; // false when white to move, true when black to move
-    //char board[65];
+
     Position() {
         white = 0xFFFF000000000000; // rank_1 | rank_2;
         black = 0x000000000000FFFF; // rank_7 | rank_8;
@@ -628,12 +679,14 @@ struct Position {
         knight = 0x4200000000000042; // b1 | b8 | g1 | g8;
         rights = 0x00; // move, castling rights
     }
+
     constexpr bool wkcr() const { return cr & 1; }
     constexpr bool wqcr() const { return cr & 2; }
     constexpr bool bkcr() const { return cr & 4; }
     constexpr bool bqcr() const { return cr & 8; }
-    constexpr bool epc() const { return epc_; }
+    constexpr uint8_t epc() const { return epc_; }
     constexpr bool ep() const { return ep_; }
+    constexpr uint8_t epi() const { return epc_ | ((c() ? 40 : 16))
     constexpr bool c() const { return c_; }
 
     void play(Position rhs) {
@@ -645,49 +698,40 @@ struct Position {
         king ^= rhs.king;
         white ^= rhs.white;
         black ^= rhs.black;
-        rights ^= rhs.rights;
+        cr ^= rhs.cr;
+        epc_ ^= rhs.epc_;
+        ep_ ^= rhs.ep_;
+        c_ ^= rhs.c_;
     }
+
     void play(Move const& move) {
-        auto si = move.si();
-        auto ti = move.ti();
+        auto pr = move.pr();
         auto sc = move.sc();
         auto tc = move.tc();
         auto sp = move.sp();
         auto cp = move.cp();
-        auto wkcr = move.wkcr();
-        auto bkcr = move.bkcr();
-        auto wqcr = move.wqcr();
-        auto bqcr = move.bqcr();
-        auto epc0 = move.epc0();
-        auto ep0 = move.ep0();
-        auto epc1 = move.epc1();
-        auto ep1 = move.ep1();
-        auto c = move.c();
+        auto color = move.c();
 
         uint64_t s = move.s();
         uint64_t t = move.t();
         uint64_t st = move.st();
-        auto ui = move.ui();
-
-        //uint64_t u = move.u();
 
         uint64_t & us = c ? black : white;
         uint64_t & them = c ? white : black;
 
         c_ = !c_;
 
-        ep_ ^= ep0;
-        ep_ ^= ep1;
+        ep_ ^= move.ep0();
+        ep_ ^= move.ep1();
 
-        epc_ ^= epc0;
-        epc_ ^= epc1;
+        epc_ ^= move.epc0();
+        epc_ ^= move.epc1();
 
-        cr ^= (wkcr ? 0x01 : 0x00) | (wqcr ? 0x02 : 0x00) |
-              (bkcr ? 0x04 : 0x00) | (bqcr ? 0x08 : 0x00);
+        cr ^= move.cr();
 
         us ^= st;
 
-        if (move.pr()) {
+        if (pr) {
             pawn ^= s;
             switch (sp) {
                 case KNIGHT: knight ^= t; break;
@@ -706,6 +750,7 @@ struct Position {
                 case KING: king ^= st; break;
             }
         }
+
         switch (cp) {
             case PAWN: pawn ^= t; them ^= t; break;
             case KNIGHT: knight ^= t; them ^= t; break;
@@ -723,15 +768,16 @@ struct Position {
         }
 
         if ((sp == KING) && (tc == sc + 2)) {
-            rook ^= c() ? 0x00000000000000A0 : 0xA000000000000000;
-            us ^= c() ? 0x00000000000000A0 : 0xA000000000000000;
+            rook ^= color ? 0x00000000000000A0 : 0xA000000000000000;
+            us ^= color ? 0x00000000000000A0 : 0xA000000000000000;
         }
 
         if ((sp == KING) && (tc + 2 == sc)) {
-            rook ^= c() ? 0x0000000000000009 : 0x0900000000000000;
-            us ^= c() ? 0x0000000000000009 : 0x0900000000000000;
+            rook ^= color ? 0x0000000000000009 : 0x0900000000000000;
+            us ^= color ? 0x0000000000000009 : 0x0900000000000000;
         }
     }
+
     std::vector<Move> legal_moves() { //uint16_t *out, uint8_t *moves_written) {
         // Step 1. Which player is active? (i.e. Whose turn?)
         // Take the perspective of the moving player, so
@@ -739,19 +785,9 @@ struct Position {
         Bitboard & us = c() ? black : white;
         Bitboard & them = c() ? white : black;
         Bitboard empty = ~(us | them);
-
-        bool color = c();
-
         std::vector<Move> moves {};
 
-        void add_move_s_t(
-            bool c,
-            bool pr,
-            Piece sp,
-            uint8_t si,
-            uint8_t ti,
-            ) {
-
+        void add_move_s_t(bool c, bool pr, Piece sp, uint8_t si, uint8_t ti) {
             uint64_t t = 1UL << ti;
             Piece cp;
             if (empty & t) {
@@ -774,20 +810,20 @@ struct Position {
             bool ep1 = (sp == PAWN) && ((si == ti + 16) || (ti == si + 16));
             uint8_t epc1 = ep1 ? tc : 0;
 
-            moves.push_back(Move(tc, tr, bqcr, bkcr, sc, sr, wqcr, wkcr, cp, sp, pr, c, epc(), ep(), epc1, ep1));
+            moves.push_back(Move(tc, tr, bqcr1, bkcr1, sc, sr, wqcr1, wkcr1, cp, sp, pr, c(), epc(), ep(), epc1, ep1));
         }
 
-        void add_move_s_T(bool c, bool pr, Piece sp,
-            uint8_t si, Bitboard T, uint_t flag) {
+        void add_move_s_T(bool c, bool pr, Piece sp, uint8_t si, Bitboard T) {
             while (T) {
                 uint8_t ti = ntz(T);
                 T &= T-1;
-                add_move_s_t(c, pr, sp, si, ti, flag);
+                add_move_s_t(c, pr, sp, si, ti);
             }
         }
 
         Bitboard qr = (queen | rook) & them;
         Bitboard qb = (queen | bishop) & them;
+
         bool check(uint8_t si) {
             // without removing king from board, determine if si square is chked
             constexpr auto translations = {-8, 8, -1, 1, -9, -7, 7, 9};
@@ -816,9 +852,11 @@ struct Position {
         uint8_t oki = ntz(ok);
         uint8_t okr = oki >> 3;
         uint8_t okc = oki & 0x07;
+
         // take our king off the board
         us ^= ok;
         king ^= ok;
+
         // loop through the possibilities
         auto S = kingthreats(oki) & ~us;
         while (S) {
@@ -826,11 +864,12 @@ struct Position {
             S &= (S-1);
             if (!check(si)) add_move(c(), false, KING, oki, si);
         }
+
         // put the king back on the board
         us ^= ok;
         king ^= ok;
 
-        // Step 2. Are we in check?
+        // Are we in check?
         Bitboard targets = ~us;
         Bitboard pinned = uint64_t(0); // idea: init pinned as 'them'
         uint8_t num_checks = 0;
@@ -848,13 +887,14 @@ struct Position {
                if(pin == 0) {
                  num_checks += 1;
                  uint8_t ci = oki + step * (checker + 1);
-                 targets &= INTERPOSITIONS[oki | (ci << 6)];  // { HOLE }
+                 targets &= INTERPOSITIONS[(oki << 6) | ci];
                } else {
                  pinned |= 1UL << (oki + step * (pin + 1));
                }
                // maybe +1's can be removed along with other shifts elsewhere
             }
         }
+
         // knight checks
         S = knightthreats(oki) & knight & them;
         num_checks += popcount(S);
@@ -875,7 +915,7 @@ struct Position {
 
         if (targets == 0) return moves;
 
-        // Move generation
+        // we aren't in check
 
         // Queen Moves
         S = queen & us;
@@ -944,7 +984,7 @@ struct Position {
             }
         }
 
-        // Find Knight moves
+        // Knight moves
         S = knight & us & ~pinned;
         while (S) {
           uint8_t si = ntz(S);
@@ -954,11 +994,11 @@ struct Position {
 
         // Pawn pushes
         Bitboard our_pawns = pawn & us;
-        Bitboard T = empty & (color ? (our_pawns << 8) : (our_pawns >> 8));
+        Bitboard T = empty & (c() ? (our_pawns << 8) : (our_pawns >> 8));
         while (T) {
           auto ti = ntz(T);
           T &= T-1;
-          Square si = ti - (color ? 8 : -8);
+          Square si = ti - (c() ? 8 : -8);
           Bitboard s = 1UL << si;
           if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
           if ((1UL << ti) & endrank) {
@@ -972,12 +1012,12 @@ struct Position {
         }
 
         // Pawn captures (except en passant)
-        T = pawnthreats(our_pawns, color) & them;
+        T = pawnthreats(our_pawns, c()) & them;
         while (T) {
           auto ti = ntz(T);
           T &= T-1;
           Bitboard t = 1UL << ti;
-          S = pawnthreats(t, !color) & our_pawns;
+          S = pawnthreats(t, !c()) & our_pawns;
           while (S) {
             auto si = ntz(S);
             S &= S-1;
@@ -1006,26 +1046,25 @@ struct Position {
         }
 
         // Double Pawn pushes
-        S = our_pawns & (color ? 0x000000000000FF00UL :
+        S = our_pawns & (c() ? 0x000000000000FF00UL :
                                  0x00FF000000000000UL);
-        T = empty & (color ? ((S << 16) & (empty << 8))
+        T = empty & (c() ? ((S << 16) & (empty << 8))
                            : ((S >> 16) & (empty >> 8)));
         while (T) {
             auto ti = ntz(T);
             T &= T-1;
-            Square si = ti - (color ? 16 : -16);
+            Square si = ti - (c() ? 16 : -16);
             Bitboard s = 1UL << si;
             if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
-            add_s_t(c(), false, PAWN, si, ti, si & 0x07);
+            add_s_t(c(), false, PAWN, si, ti);
         }
 
         // A discovered check cannot be countered with
         // an en passant capture. ~The More You Know~
 
         // En Passant
-        if (epc() < 8) { // { HOLE } define epc above
-            Bitboard ep = 1UL << epi();
-            S = pawnthreats(ep, !color) & our_pawns;
+        if (ep()) {
+            S = pawnthreats(1UL << epi(), !c()) & our_pawns;
             while (S) {
                 auto si = ntz(S);
                 S &= S-1;
@@ -1071,34 +1110,35 @@ struct Position {
                         }
                     }
                 }
-                if (!pin) add_s_t(c(), false, PAWN, si, epi(), 8);
+                if (!pin) add_s_t(c(), false, PAWN, si, epi());
             }
         }
 
 
         // Kingside Castle
-        if (color ? bkcr() : wkcr()) {
-          Bitboard conf = (color ? 240UL : (240UL << 56));
-          if ((us & conf) == (color ? 144UL : (144UL << 56))) {
-            if ((empty & conf) == (color ? 96UL : (96UL << 56))) {
+        if (c() ? bkcr() : wkcr()) {
+          Bitboard conf = (c() ? 240UL : (240UL << 56));
+          if ((us & conf) == (c() ? 144UL : (144UL << 56))) {
+            if ((empty & conf) == (c() ? 96UL : (96UL << 56))) {
               if (!check(oki) && !check(oki+1) && !check(oki+2)) {
-                add_s_t(c(), false, KING, oki, oki + 2, 9);
+                add_s_t(c(), false, KING, oki, oki + 2);
               }
             }
           }
         }
 
         // Queenside Castle
-        if (color ? bqcr() : wqcr()) {
-          auto conf = (color ? 31UL : (31UL << 56));
-          if ((us & conf) == (color ? 17UL : (17UL << 56))) {
-            if ((empty & conf) == (color ? 14UL : (14UL << 56))) {
+        if (c() ? bqcr() : wqcr()) {
+          auto conf = (c() ? 31UL : (31UL << 56));
+          if ((us & conf) == (c() ? 17UL : (17UL << 56))) {
+            if ((empty & conf) == (c() ? 14UL : (14UL << 56))) {
               if (!check(oki) && !check(oki-1) && !check(oki-2)) {
-                add_s_t(c(), false, KING, oki, oki + 2, 10);
+                add_s_t(c(), false, KING, oki, oki + 2);
               }
             }
           }
         }
+
         return moves;
     }
 };
