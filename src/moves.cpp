@@ -170,24 +170,24 @@ constexpr uint8_t bitreverse8(uint8_t x) {
   return __builtin_bitreverse8(x);
 }
 
-template <uint8_t row, uint8_t col> constexpr uint8_t e_hash (Bitboard x) {
+constexpr uint8_t e_hash (Bitboard x, uint8_t row, uint8_t col) {
     return (x >> (8*row+col+1)) & rank_8;
 }
 
-template <uint8_t row, uint8_t col> constexpr uint8_t n_hash (Bitboard x) {
+constexpr uint8_t n_hash (Bitboard x, uint8_t row, uint8_t col) {
     return (antidiagonal * (file_a & (x >> (8*row+col+8)))) >> 56;
 }
 
-template <uint8_t row, uint8_t col> constexpr uint8_t w_hash (Bitboard x) {
+constexpr uint8_t w_hash (Bitboard x, uint8_t row, uint8_t col) {
     return bitreverse8(((x >> (8*row)) << (8-col)) & rank_8);
 }
 
-template <uint8_t row, uint8_t col> constexpr uint8_t s_hash (Bitboard x) {
+constexpr uint8_t s_hash (Bitboard x, uint8_t row, uint8_t col) {
     // there is probably slightly faster magic
     return bitreverse8((antidiagonal * (file_a & (x << (8*(8-row)-col)))) >> 56);
 }
 
-template <uint8_t row, uint8_t col> constexpr Bitboard nwse_diagonal() {
+constexpr Bitboard nwse_diagonal(uint8_t row, uint8_t col) {
   if constexpr (row > col) {
     return diagonal >> (8*(row-col));
   } else {
@@ -195,7 +195,7 @@ template <uint8_t row, uint8_t col> constexpr Bitboard nwse_diagonal() {
   }
 }
 
-template <uint8_t row, uint8_t col> constexpr Bitboard swne_diagonal() {
+constexpr Bitboard swne_diagonal(uint8_t row, uint8_t col) {
   if constexpr (row + col < 7) {
     return antidiagonal << (8*(7 - row+col));
   } else {
@@ -203,23 +203,23 @@ template <uint8_t row, uint8_t col> constexpr Bitboard swne_diagonal() {
   }
 }
 
-template <uint8_t row, uint8_t col> constexpr uint8_t nw_hash (Bitboard x) {
-    constexpr Bitboard this_diagonal = nwse_diagonal<row,col>();
+constexpr uint8_t nw_hash (Bitboard x, uint8_t row, uint8_t col) {
+    constexpr Bitboard this_diagonal = nwse_diagonal(row, col);
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
 
-template <uint8_t row, uint8_t col> constexpr uint8_t ne_hash (Bitboard x) {
-    constexpr Bitboard this_diagonal = swne_diagonal<row,col>();
+constexpr uint8_t ne_hash (Bitboard x, uint8_t row, uint8_t col) {
+    constexpr Bitboard this_diagonal = swne_diagonal(row, col);
     return (((file_a * (x & this_diagonal)) >> 56) >> (col+1)) & rank_8;
 };
 
-template <uint8_t row, uint8_t col> constexpr uint8_t sw_hash (Bitboard x) {
-    constexpr Bitboard this_diagonal = swne_diagonal<row,col>();
+constexpr uint8_t sw_hash (Bitboard x, uint8_t row, uint8_t col) {
+    constexpr Bitboard this_diagonal = swne_diagonal(row, col);
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
 
-template <uint8_t row, uint8_t col> constexpr uint8_t se_hash (Bitboard x) {
-    constexpr Bitboard this_diagonal = nwse_diagonal<row,col>();
+constexpr uint8_t se_hash (Bitboard x, uint8_t row, uint8_t col) {
+    constexpr Bitboard this_diagonal = nwse_diagonal(row, col);
     return (((file_a * (x & this_diagonal)) >> 56) << (col+1)) & rank_8;
 };
 
@@ -873,18 +873,20 @@ struct Position {
 
     bool check(uint8_t si) {
         Bitboard const& them = c() ? white : black;
+
         Bitboard qr = (queen | rook) & them;
         Bitboard qb = (queen | bishop) & them;
+
         uint8_t sc = si & 7;
         uint8_t sr = si >> 3;
-        //std::array nswe {n_hash, s_hash, w_hash, e_hash};
-        for (auto const& f : {n_hash<sc,sr>, s_hash<sc,sr>, w_hash<sc,sr>, e_hash<sc,sr>})) {
-            auto [checker, pin] = CAP[(f(them)<<14)|(f(us)<<7)|f(qr)];
+
+        for (auto const& f : {n_hash, s_hash, w_hash, e_hash})) {
+            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 14) | (f(us, sc, sr) << 7) | f(qr, sc, sr)];
             if (checker != 0 && pin == 0) return false;
         }
 
-        for (auto const& f : {nw_hash<sc,sr>, ne_hash<sc,sr>, sw_hash<sc,sr>, se_hash<sc,sr>}) {
-            auto [checker, pin] = CAP[(f(them)<<14)|(f(us)<<7)|f(qb)];
+        for (auto const& f : {nw_hash, ne_hash, sw_hash, se_hash}) {
+            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 14) | (f(us, sc, sr) << 7) | f(qb)];
             if (checker != 0 && pin == 0) return false;
         }
 
@@ -934,31 +936,34 @@ struct Position {
         // Are we in check?
         Bitboard targets = ~us;
         Bitboard pinned = uint64_t(0); // idea: init pinned as 'them'
-        uint8_t num_checks = 0;
 
-        Bitboard qr = (queen | rook) & them;
-        Bitboard qb = (queen | bishop) & them;
-        auto translations = {-8, 8, -1, 1, -9, -7, 7, 9};
-        auto const& hashes = {n_hash, s_hash, w_hash, e_hash, nw_hash, ne_hash, sw_hash, se_hash};
-        for (auto const& [i, step] : enumerate(translations)) {
-            auto const& f = hashes[i];
-            Bitboard const& tx = (i < 4) ? qr : qb;
-            auto [checker, pin] = CAP[(f(them)<<14)|(f(us)<<7)|f(tx)];
+
+        auto check_and_pin_search = [&](auto&& f, uint8_t x, int8_t step) {
+            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 14) | (f(us, sc, sr) << 7) | f(x, sc, sr)];
             if (checker != 0) {
                if (pin == 0) {
-                 num_checks += 1;
                  uint8_t ci = oki + step * (checker + 1);
                  targets &= INTERPOSITIONS[(oki << 6) | ci];
                } else {
                  pinned |= 1UL << (oki + step * (pin + 1));
                }
-               // maybe +1's can be removed along with other shifts elsewhere
             }
-        }
+        };
+
+        Bitboard qr = (queen | rook) & them;
+        check_and_pin_search(n_hash, -8, qr);
+        check_and_pin_search(s_hash,  8, qr);
+        check_and_pin_search(w_hash, -1, qr);
+        check_and_pin_search(e_hash,  1, qr);
+
+        Bitboard qb = (queen | bishop) & them;
+        check_and_pin_search(nw_hash, -9, qb);
+        check_and_pin_search(ne_hash, -7, qb);
+        check_and_pin_search(sw_hash,  7, qb);
+        check_and_pin_search(se_hash,  9, qb);
 
         // knight checks
         S = knightthreats(oki) & knight & them;
-        num_checks += popcount(S);
         while (S) {
           uint8_t si = ntz(S);
           S &= S - 1;
@@ -967,7 +972,6 @@ struct Position {
 
         // pawn checks
         S = pawnthreats(ok, c()) & pawn & them;
-        num_checks += popcount(pt);
         while (S) {
           uint8_t si = ntz(S);
           S &= S - 1;
@@ -976,7 +980,6 @@ struct Position {
 
         if (targets == 0) return moves;
 
-        // we aren't in check
 
         // Queen Moves
         S = queen & us;
