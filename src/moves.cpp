@@ -18,6 +18,7 @@ template <uint64_t N> constexpr auto range() {
     for(uint64_t i = 0; i < N; ++i) result[i] = i;
     return result;
 }
+
 template <typename F, typename S> constexpr auto map(F func, S seq) {
     typedef typename S::value_type value_type;
     using return_type = decltype(func(std::declval<value_type>()));
@@ -26,6 +27,7 @@ template <typename F, typename S> constexpr auto map(F func, S seq) {
     for (auto x : seq) result[i++] = func(x);
     return result;
 }
+
 template <typename S> constexpr auto enumerate(S seq) {
     typedef typename S::value_type value_type;
     std::array<std::pair<uint64_t, value_type>, std::tuple_size<S>::value> result {};
@@ -53,10 +55,12 @@ constexpr auto squares = range<64>();
 // the least significant bit corresponds to the integer 0,
 // and so on.
 typedef uint64_t Bitboard;
+
 typedef int Square;
 
 // debugging tool: type wrapper for cout
 struct Vizboard {Bitboard x;};
+
 std::ostream & operator << (std::ostream & stream, Vizboard x) {
   stream << "as bitset: " << std::bitset<64>(x.x) << "\n";
   for (int row = 0; row < 8; ++ row) {
@@ -72,18 +76,22 @@ std::ostream & operator << (std::ostream & stream, Vizboard x) {
 // consisting of one Square, can be constructed from
 // a Square via the power of two operation.
 constexpr auto twopow = [](Square x){return Bitboard(1) << x;};
+
 constexpr uint8_t popcount(Bitboard x) {
   // number of one bits
   return __builtin_popcountll(x);
 }
+
 constexpr uint8_t nlz(Bitboard x) {
   // number of leading zeros
   return __builtin_clzll(x);
 }
+
 constexpr uint8_t ntz(Bitboard x) {
   // number of trailing zeros
   return __builtin_ctzll(x);
 }
+
 constexpr auto SquareBitboardRelation = enumerate(map(twopow, squares));
 
 // Special Bitboards
@@ -101,23 +109,37 @@ constexpr Bitboard antidiagonal = 0x0102040810204080UL;
 // are lost if they go over the edge. North is towards Black,
 // West is towards queenside.
 constexpr auto w(Bitboard x) -> Bitboard {return (x >> 1) & ~(file_h);}
+
 constexpr auto e(Bitboard x) -> Bitboard {return (x << 1) & ~(file_a);}
+
 constexpr auto s(Bitboard x) -> Bitboard {return (x << 8) & ~(rank_8);}
+
 constexpr auto n(Bitboard x) -> Bitboard {return (x >> 8) & ~(rank_1);}
+
 constexpr auto nw(Bitboard x) -> Bitboard {return n(w(x));}
+
 constexpr auto ne(Bitboard x) -> Bitboard {return n(e(x));}
+
 constexpr auto sw(Bitboard x) -> Bitboard {return s(w(x));}
+
 constexpr auto se(Bitboard x) -> Bitboard {return s(e(x));}
+
 constexpr auto nwn(Bitboard x) -> Bitboard {return nw(n(x));}
+
 constexpr auto nen(Bitboard x) -> Bitboard {return ne(n(x));}
+
 constexpr auto sws(Bitboard x) -> Bitboard {return sw(s(x));}
+
 constexpr auto ses(Bitboard x) -> Bitboard {return se(s(x));}
+
 constexpr auto wnw(Bitboard x) -> Bitboard {return w(nw(x));}
+
 constexpr auto ene(Bitboard x) -> Bitboard {return e(ne(x));}
+
 constexpr auto wsw(Bitboard x) -> Bitboard {return w(sw(x));}
+
 constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x));}
 
-// a fistful of hash functions
 constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     // Given a chessboard square i and the Bitboard of empty squares
     // on it's "+"-mask, this function determines those squares
@@ -130,6 +152,7 @@ constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     auto Y = (A * (L & (E >> (i & 0b000111)))) >> 56;  // 5
     return (Y << 14) | (X << 6) | i; // 4
 }
+
 constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
   // Given a singleton bitboard x and the set of empty squares
   // on it's "x"-mask, this function packages that information
@@ -146,22 +169,28 @@ constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
   auto Y = (L*(OD&E)) >> 56;
   return (Y << 14) | (X << 6) | i;
 }
+
 constexpr uint8_t bitreverse8(uint8_t x) {
   return __builtin_bitreverse8(x);
 }
+
 template <uint8_t row, uint8_t col> constexpr uint8_t e_hash (Bitboard x) {
     return (x >> (8*row+col+1)) & rank_8;
-};
+}
+
 template <uint8_t row, uint8_t col> constexpr uint8_t n_hash (Bitboard x) {
     return (antidiagonal * (file_a & (x >> (8*row+col+8)))) >> 56;
-};
+}
+
 template <uint8_t row, uint8_t col> constexpr uint8_t w_hash (Bitboard x) {
     return bitreverse8(((x >> (8*row)) << (8-col)) & rank_8);
-};
+}
+
 template <uint8_t row, uint8_t col> constexpr uint8_t s_hash (Bitboard x) {
     // there is probably slightly faster magic
     return bitreverse8((antidiagonal * (file_a & (x << (8*(8-row)-col)))) >> 56);
-};
+}
+
 template <uint8_t row, uint8_t col> constexpr Bitboard nwse_diagonal() {
   if constexpr (row > col) {
     return diagonal >> (8*(row-col));
@@ -169,6 +198,7 @@ template <uint8_t row, uint8_t col> constexpr Bitboard nwse_diagonal() {
     return diagonal << (8*(col-row));
   }
 }
+
 template <uint8_t row, uint8_t col> constexpr Bitboard swne_diagonal() {
   if constexpr (row + col < 7) {
     return antidiagonal << (8*(7 - row+col));
@@ -176,24 +206,27 @@ template <uint8_t row, uint8_t col> constexpr Bitboard swne_diagonal() {
     return antidiagonal >> (8*(row+col - 7));
   }
 }
+
 template <uint8_t row, uint8_t col> constexpr uint8_t nw_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = nwse_diagonal<row,col>();
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
+
 template <uint8_t row, uint8_t col> constexpr uint8_t ne_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = swne_diagonal<row,col>();
     return (((file_a * (x & this_diagonal)) >> 56) >> (col+1)) & rank_8;
 };
+
 template <uint8_t row, uint8_t col> constexpr uint8_t sw_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = swne_diagonal<row,col>();
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
+
 template <uint8_t row, uint8_t col> constexpr uint8_t se_hash (Bitboard x) {
     constexpr Bitboard this_diagonal = nwse_diagonal<row,col>();
     return (((file_a * (x & this_diagonal)) >> 56) << (col+1)) & rank_8;
 };
 
-// table computations
 std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
     // compute checks and pins to the right,
     // that is, least sig bits are closer to king
@@ -231,7 +264,9 @@ std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
     }
     return result;
 }
+
 std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> CAP = compute_cap();
+
 template<typename T> constexpr Bitboard slide(Bitboard x, T f) {
   // T stands for "translation" and we expect it to be a
   // uint64_t(uint64_t) function type that translates bitboards.
@@ -245,6 +280,7 @@ template<typename T> constexpr Bitboard slide(Bitboard x, T f) {
   // all slid off the board) and OR the results.
   return f(x) | ((f(x) == 0) ? 0 : slide(f(x), f));
 }
+
 template<typename... Ts> constexpr std::array<uint64_t, 64>
 SliderMask(Ts... args) {
   auto result = std::array<uint64_t, 64>();
@@ -255,8 +291,11 @@ SliderMask(Ts... args) {
   }
   return result;
 }
+
 constexpr auto ROOKMASK = SliderMask(n, s, w, e);
+
 constexpr auto BISHOPMASK = SliderMask(nw, sw, ne, se);
+
 std::vector<Bitboard> computerookthreats(){
   std::vector<Bitboard> result (1UL << 22);
   for (Square i = 0; i < 64; ++ i) {
@@ -285,8 +324,10 @@ std::vector<Bitboard> computerookthreats(){
   }
   return result;
 }
+
 std::vector<Bitboard> ROOKTHREATS = computerookthreats();
-std::vector<Bitboard> computebishopthreats(){
+
+std::vector<Bitboard> computebishopthreats() {
   auto result = std::vector<Bitboard>(1 << 22);
   for (auto const& [i, x] : SquareBitboardRelation) {
     Square const row = i >> 3;
@@ -318,7 +359,9 @@ std::vector<Bitboard> computebishopthreats(){
   }
   return result;
 }
+
 std::vector<Bitboard> BISHOPTHREATS = computebishopthreats();
+
 constexpr std::array<Bitboard, 64> computeknightthreats(){
   auto result = std::array<Bitboard, 64>();
   for (auto const& [i, x] : SquareBitboardRelation) {
@@ -330,7 +373,9 @@ constexpr std::array<Bitboard, 64> computeknightthreats(){
   }
   return result;
 }
+
 constexpr std::array<Bitboard, 64> KNIGHTTHREATS = computeknightthreats();
+
 constexpr std::array<Bitboard, 64> computekingthreats(){
   auto result = std::array<Bitboard, 64>();
   for (auto const& [i, x] : SquareBitboardRelation) {
@@ -340,7 +385,9 @@ constexpr std::array<Bitboard, 64> computekingthreats(){
   }
   return result;
 }
+
 constexpr std::array<Bitboard, 64> KINGTHREATS = computekingthreats();
+
 std::vector<uint64_t> computeinterpositions() {
     // 64x64 table of bitboards expressing next allowed targets
     // if the goal is to interpose an attack from s to t.
@@ -351,28 +398,28 @@ std::vector<uint64_t> computeinterpositions() {
         for (uint8_t ti = 0; ti < 64; ++ ti) {
             uint8_t tc = ti & 7; uint8_t tr = ti >> 3;
             if (sc == tc) {
-                uint64_t F = 0x1010101010101010 << sc;
+                uint64_t F = 0x0101010101010101UL << sc;
                 if (sr < tr) {
                     result.push_back((F >> (8*(7-tr))) & (F << (8*(sr+1))));
                 } else { // sr >= tr
                     result.push_back((F >> (8*(8-sr))) & (F << (8*(tr))));
                 }
             } else if (sr == tr) {
-                uint64_t R = 0x00000000000000FF << (8*sr);
+                uint64_t R = 0x00000000000000FFUL << (8*sr);
                 if (sc < tc) {
                     result.push_back(R & (R >> (7-tc)) & (R << (sc+1)));
                 } else { // sr >= tr
                     result.push_back(R & (R >> (8-sc)) & (R << tc));
                 }
             } else if (sr + sc == tr + tc) {
-                uint64_t A = (sr + sc < 7) ? (0x0102040810204080 >> (8*(7-sr-sc))) : (0x0102040810204080 << (8*(sr+sc-7)));
+                uint64_t A = (sr + sc < 7) ? (0x0102040810204080UL >> (8*(7-sr-sc))) : (0x0102040810204080UL << (8*(sr+sc-7)));
                 if (sr < tr) {
                     result.push_back(A & (A << (7*(sr+1))) & (A >> (7*(7-tr)));
                 } else { // sr >= tr
                     result.push_back(A & (A << (7*tr)) & (A >> (7*(8-sr))));
                 }
             } else if (sr + tc == tr + sc) {
-                uint64_t D = (sr < sc) ? (0x8040201008040201 >> (8*(sc-sr))) : (0x8040201008040201 << (8*(sr-sc)));
+                uint64_t D = (sr < sc) ? (0x8040201008040201UL >> (8*(sc-sr))) : (0x8040201008040201UL << (8*(sr-sc)));
                 if (sr < tr) {
                     result.push_back(D & (D << (9*(sr+1))) & (D >> (9*(7-tr)));
                 } else {
@@ -385,24 +432,30 @@ std::vector<uint64_t> computeinterpositions() {
     }
     return result;
 }
+
 std::vector<Bitboard> INTERPOSITIONS = computeinterpositions();
-// threat queries
+
 Bitboard const& rookthreats(Square i, Bitboard const& empty) {
   return ROOKTHREATS[rookcollisionfreehash(i, empty & ROOKMASK[i])];
 }
+
 Bitboard const& bishopthreats(Square i, Bitboard const& empty) {
   return BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])];
 }
+
 Bitboard queenthreats(Square i, Bitboard const& empty) {
   return ROOKTHREATS[rookcollisionfreehash(i, empty & ROOKMASK[i])] |
     BISHOPTHREATS[bishopcollisionfreehash(i, empty & BISHOPMASK[i])];
 }
+
 Bitboard const& knightthreats(Square i) {
   return KNIGHTTHREATS[i];
 }
+
 Bitboard const& kingthreats(Square i) {
   return KINGTHREATS[i];
 }
+
 Bitboard pawnthreats(Bitboard const& X, bool color) {
     constexpr Bitboard not_file_a = ~file_a;
     constexpr Bitboard not_file_h = ~file_h;
@@ -410,7 +463,6 @@ Bitboard pawnthreats(Bitboard const& X, bool color) {
       (((not_file_h & X) >> 7) | ((not_file_a & X) >> 9));
 }
 
-// Part II. The Move Representations
 enum Piece {
   SPACE = 0,
   PAWN = 1,
@@ -686,7 +738,7 @@ struct Position {
     constexpr bool bqcr() const { return cr & 8; }
     constexpr uint8_t epc() const { return epc_; }
     constexpr bool ep() const { return ep_; }
-    constexpr uint8_t epi() const { return epc_ | ((c() ? 40 : 16))
+    constexpr uint8_t epi() const { return epc_ | (c() ? 40 : 16); }
     constexpr bool c() const { return c_; }
 
     void play(Position rhs) {
@@ -1154,6 +1206,7 @@ std::array<Move,44304> compute_move_table() {
     }
     return result;
 }
+
 std::array<Position,44304> compute_posmove_table() {
     std::array<Position,44304> result {};
     uint16_t j = 0;
@@ -1168,6 +1221,7 @@ std::array<Position,44304> compute_posmove_table() {
     }
     return result;
 }
+
 std::array<uint16_t,16777216> compute_lookup_table() {
     // to make this independent from compute_move_table()
     // we simply recompute it here.
@@ -1186,9 +1240,13 @@ std::array<uint16_t,16777216> compute_lookup_table() {
     }
     return result;
 }
+
 std::array<Move,44304> MOVETABLE = compute_move_table();
+
 std::array<Position,44304> POSMOVETABLE = compute_posmove_table();
+
 std::array<uint16_t,16777216> LOOKUP = compute_lookup_table();
+
 void moves_csv_to_stdout() {
     uint32_t cnt = 0;
     uint32_t pcnt = 0;
@@ -1256,6 +1314,7 @@ void moves_csv_to_stdout() {
     // K: (3*4+5*24+8*36)*6*2-(3*4+5*12)*2+8+4+(3*6+2*5)*2*3
     //    == 5076
 }
+
 int main(int argc, char * argv []) {
     // ... test goes here ...
     std::cout << "MOVETABLE = [";
