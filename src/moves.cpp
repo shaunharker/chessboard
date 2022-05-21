@@ -172,9 +172,9 @@ constexpr uint64_t se_ray(uint8_t row, uint8_t col) {
     return (diagonal << (8 * row + col)) & ((row < col) ? NE_MASK : SW_MASK);
 }
 
-template <RayFun ray>
+template <typename RayFun>
 std::array<uint64_t, 64>
-compute_ray(){
+compute_ray(RayFun ray){
     std::array<uint64_t, 64> result;
     for (uint8_t i = 0; i < 64; ++ i) {
         result[i] = ray(i >> 3, i & 7);
@@ -182,21 +182,21 @@ compute_ray(){
     return result;
 }
 
-std::array<uint64_t, 64> NW_RAY = compute_ray<nw_ray>();
+std::array<uint64_t, 64> NW_RAY = compute_ray(nw_ray);
 
-std::array<uint64_t, 64>  N_RAY = compute_ray<n_ray>();
+std::array<uint64_t, 64>  N_RAY = compute_ray(n_ray);
 
-std::array<uint64_t, 64> NE_RAY = compute_ray<ne_ray>();
+std::array<uint64_t, 64> NE_RAY = compute_ray(ne_ray);
 
-std::array<uint64_t, 64>  W_RAY = compute_ray<w_ray>();
+std::array<uint64_t, 64>  W_RAY = compute_ray(w_ray);
 
-std::array<uint64_t, 64>  E_RAY = compute_ray<e_ray>();
+std::array<uint64_t, 64>  E_RAY = compute_ray(e_ray);
 
-std::array<uint64_t, 64> SW_RAY = compute_ray<sw_ray>();
+std::array<uint64_t, 64> SW_RAY = compute_ray(sw_ray);
 
-std::array<uint64_t, 64>  S_RAY = compute_ray<s_ray>();
+std::array<uint64_t, 64>  S_RAY = compute_ray(s_ray);
 
-std::array<uint64_t, 64> SE_RAY = compute_ray<se_ray>();
+std::array<uint64_t, 64> SE_RAY = compute_ray(se_ray);
 
 Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     // Given a chessboard square i and the Bitboard of empty squares
@@ -265,7 +265,7 @@ uint8_t ne_scan (Bitboard x, uint8_t row, uint8_t col) {
     x &= NE_RAY[(row << 3) | col];
     x <<= 8 * (7 - row);
     x >>= col;
-    return (file_a * x)) >> 56;
+    return (file_a * x) >> 56;
 }
 
 uint8_t w_scan (Bitboard x, uint8_t row, uint8_t col) {
@@ -1088,7 +1088,7 @@ struct Position {
         // must target in order to deal with the check (i.e. either
         // interpose or capture the attacker giving check).
 
-        auto check_and_pin_search = [&](auto&& f, uint8_t x, int8_t step) {
+        auto check_and_pin_search = [&](auto&& f, uint64_t x, int8_t step) {
             auto const& [checker, pin] = CAP[(f(them, okc, okr) << 16) | (f(us, okc, okr) << 8) | f(x, okc, okr)];
             if (checker != 0) {
                if (pin == 0) {
@@ -1101,16 +1101,16 @@ struct Position {
         };
 
         Bitboard qr = (queen | rook) & them;
-        check_and_pin_search(n_hash, -8, qr);
-        check_and_pin_search(s_hash,  8, qr);
-        check_and_pin_search(w_hash, -1, qr);
-        check_and_pin_search(e_hash,  1, qr);
+        check_and_pin_search(n_scan, qr, -8);
+        check_and_pin_search(s_scan, qr,  8);
+        check_and_pin_search(w_scan, qr, -1);
+        check_and_pin_search(e_scan, qr,  1);
 
         Bitboard qb = (queen | bishop) & them;
-        check_and_pin_search(nw_hash, -9, qb);
-        check_and_pin_search(ne_hash, -7, qb);
-        check_and_pin_search(sw_hash,  7, qb);
-        check_and_pin_search(se_hash,  9, qb);
+        check_and_pin_search(nw_scan, qb, -9);
+        check_and_pin_search(ne_scan, qb, -7);
+        check_and_pin_search(sw_scan, qb,  7);
+        check_and_pin_search(se_scan, qb,  9);
 
         // knight checks
         S = knightthreats(oki) & knight & them;
