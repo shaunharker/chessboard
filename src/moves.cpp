@@ -383,7 +383,7 @@ struct Move {
     uint8_t tc_tr_bqcr_bkcr;
     uint8_t sc_sr_wqcr_wkcr;
     uint8_t cp_sp_pr_c;
-    uint8_t epc_epr_zero;
+    uint8_t epc0_ep0_epc1_ep1;
 
     // 0x00 - 0x02 | tc     | target col idx into abcdefgh
     // 0x03 - 0x05 | tr     | target row idx into abcdefgh
@@ -397,9 +397,10 @@ struct Move {
     // 0x13 - 0x15 | sp     | source piece idx into .PNBRQK
     // 0x16        | pr     | promotion bit
     // 0x17        | c      | 0 if white moving, else 1
-    // 0x18 - 0x1A | epc    | en passant square col idx into abcdefgh
-    // 0x1B - 0x1D | epr    | en passant square row idx into 87654321
-    // 0x1E - 0x1F | zero   | these bits are always zero
+    // 0x18 - 0x1A | epc0   | en passant square col idx into abcdefgh
+    // 0x1B        | ep0    | 1 if last move was double push
+    // 0x1C - 0x1E | epc1   | en passant square col idx into abcdefgh
+    // 0x1F        | ep1    | 1 of this move is a double push
 
     // intr
     constexpr Move (){};
@@ -407,12 +408,12 @@ struct Move {
         tc_tr_bqcr_bkcr(X & 0xFF),
         sc_sr_wqcr_wkcr((X >> 0x08) & 0xFF),
         cp_sp_pr_c((X >> 0x10) & 0xFF),
-        epc_epr_zero((X >> 0x18) & 0xFF) {}
-    constexpr Move (uint8_t tc, uint8_t tr, bool bqcr, bool bkcr, uint8_t sc, uint8_t sr, bool wqcr, bool wkcr, uint8_t cp, uint8_t sp, bool pr, bool c, uint8_t epc, uint8_t epr) {
+        epc0_ep0_epc1_ep1((X >> 0x18) & 0xFF) {}
+    constexpr Move (uint8_t tc, uint8_t tr, bool bqcr, bool bkcr, uint8_t sc, uint8_t sr, bool wqcr, bool wkcr, uint8_t cp, uint8_t sp, bool pr, bool c, uint8_t epc0, bool ep0, uint8 epc1, bool ep1) {
         tc_tr_bqcr_bkcr = (tc & 0x07) | ((tr & 0x07) << 0x03) | (bqcr << 0x06) | (bkcr << 0x07);
         sc_sr_wqcr_wkcr = (sc & 0x07) | ((sr & 0x07) << 0x03) | (wqcr << 0x06) | (wkcr << 0x07);
         cp_sp_pr_c = (cp & 0x07) | ((sp & 0x07) << 0x03) | (pr << 0x06) | (c << 0x07);
-        epi_zero = (epc & 0x07) | ((epr & 0x07) << 0x03);
+        epc0_ep0_epc1_ep1 = (epc0 & 0x07) | (ep0 << 0x03) | ((epc1 & 0x07) << 0x04) | (ep1 << 0x07);
     }
     // elim
     constexpr uint8_t tc() const {return tc_tr_bqcr_bkcr & 0x07;}
@@ -429,10 +430,10 @@ struct Move {
     constexpr uint8_t sp() const {return (c_pr_sp_cp >> 0x02) & 0x07;}
     constexpr bool pr() const {return c_pr_sp_cp & 0x02;}
     constexpr bool c() const {return c_pr_sp_cp & 0x01;}
-    constexpr uint8_t epc() const {return epc_epr_zero & 0x07;}
-    constexpr uint8_t epr() const {return (epc_epr_zero >> 3) & 0x07;}
-    constexpr uint8_t epi() const {return epc_epr_zero & 0x3F;}
-
+    constexpr uint8_t epc0() const {return epc0_ep0_epc1_ep1 & 0x07;}
+    constexpr bool ep0() const {return epc0_ep0_epc1_ep1 & 0x08;}
+    constexpr uint8_t epc1() const {return (epc0_ep0_epc1_ep1 >> 0x04) & 0x07;}
+    constexpr bool ep1() const {return (epc0_ep0_epc1_ep1 >> 0x04) & 0x08;}
 
     // queries
     constexpr uint64_t s() const {return 1UL << si();}
@@ -448,13 +449,13 @@ struct Move {
 
     constexpr bool feasible() const {
 
-        // sp must name a glyph
+        // sp must be a Piece enum idx
         if (sp() > 6) return false;
 
         // can't move from an empty square
         if (sp() == SPACE) return false;
 
-        // cp must name a glyph
+        // cp must be a Piece enum idx
         if (cp() > 6) return false;
 
         // cp may not name KING
@@ -603,15 +604,18 @@ struct Move {
 
 // PART III. The Position
 struct Position {
-    Bitboard pawn;
-    Bitboard knight;
-    Bitboard bishop;
-    Bitboard rook;
-    Bitboard queen;
-    Bitboard king;
-    Bitboard white;
-    Bitboard black;
-    uint8_t rights;
+    Bitboard pawn; // 0 for empty, 1 for pawns
+    Bitboard knight; // 0 for empty, 1 for knights
+    Bitboard bishop; // 0 for empty, 1 for bishops
+    Bitboard rook; // 0 for empty, 1 for rooks
+    Bitboard queen; // 0 for empty, 1 for queens
+    Bitboard king;  // 0 for empty, 1 for kings
+    Bitboard white; // 0 for empty, 1 for white pieces
+    Bitboard black; // 0 for empty, 1 for black pieces
+    uint8_t cr; // castling rights. bit 0 1 2 3 ~ wk wq bk bq
+    uint8_t epc_; // 8 if last move not en passant, else col of double push
+    bool ep_;
+    bool c_; // false when white to move, true when black to move
     //char board[65];
     Position() {
         white = 0xFFFF000000000000; // rank_1 | rank_2;
@@ -624,17 +628,14 @@ struct Position {
         knight = 0x4200000000000042; // b1 | b8 | g1 | g8;
         rights = 0x00; // move, castling rights
     }
-    constexpr bool c() const {return rights & 1;}
-    constexpr bool wkcr() const {return rights & 2;}
-    constexpr bool wqcr() const {return rights & 4;}
-    constexpr bool bkcr() const {return rights & 8;}
-    constexpr bool bqcr() const {return rights & 16;}
-    constexpr bool epi() const {
-        return (c() ? (2 << 5) : (5 << 5)) | (rights >> 5);
-    }
-    constexpr bool epc() const {
-        return rights >> 5;
-    }
+    constexpr bool wkcr() const { return cr & 1; }
+    constexpr bool wqcr() const { return cr & 2; }
+    constexpr bool bkcr() const { return cr & 4; }
+    constexpr bool bqcr() const { return cr & 8; }
+    constexpr bool epc() const { return epc_; }
+    constexpr bool ep() const { return ep_; }
+    constexpr bool c() const { return c_; }
+
     void play(Position rhs) {
         pawn ^= rhs.pawn;
         knight ^= rhs.knight;
@@ -646,65 +647,77 @@ struct Position {
         black ^= rhs.black;
         rights ^= rhs.rights;
     }
-    void play(Move const& tbm) {
-        auto c = tbm.c();
-        auto si = tbm.si();
-        auto ti = tbm.ti();
-        auto sc = tbm.sc();
-        auto tc = tbm.tc();
-        auto sp = tbm.sp();
-        auto cp = tbm.cp();
-        auto wkcr = tbm.wkcr();
-        auto bkcr = tbm.bkcr();
-        auto wqcr = tbm.wqcr();
-        auto bqcr = tbm.bqcr();
-        uint64_t s = tbm.s();
-        uint64_t t = tbm.t();
-        auto ui = tbm.ui();
+    void play(Move const& move) {
+        auto si = move.si();
+        auto ti = move.ti();
+        auto sc = move.sc();
+        auto tc = move.tc();
+        auto sp = move.sp();
+        auto cp = move.cp();
+        auto wkcr = move.wkcr();
+        auto bkcr = move.bkcr();
+        auto wqcr = move.wqcr();
+        auto bqcr = move.bqcr();
+        auto epc0 = move.epc0();
+        auto ep0 = move.ep0();
+        auto epc1 = move.epc1();
+        auto ep1 = move.ep1();
+        auto c = move.c();
 
-        //uint64_t u = tbm.u();
+        uint64_t s = move.s();
+        uint64_t t = move.t();
+        uint64_t st = move.st();
+        auto ui = move.ui();
+
+        //uint64_t u = move.u();
 
         uint64_t & us = c ? black : white;
         uint64_t & them = c ? white : black;
 
-        rights ^= (wkcr ? 0x02 : 0x00) | (wqcr ? 0x04 : 0x00) |
-                  (bkcr ? 0x08 : 0x00) | (bqcr ? 0x10 : 0x00) |
-                  (0x01);
-        us ^= s;
-        switch (sp) {
-            case PAWN: pawn ^= s; break;
-            case KNIGHT: knight ^= s; break;
-            case BISHOP: bishop ^= s; break;
-            case ROOK: rook ^= s; break;
-            case QUEEN: queen ^= s; break;
-            case KING: king ^= s; break;
-        }
+        c_ = !c_;
 
+        ep_ ^= ep0;
+        ep_ ^= ep1;
+
+        epc_ ^= epc0;
+        epc_ ^= epc1;
+
+        cr ^= (wkcr ? 0x01 : 0x00) | (wqcr ? 0x02 : 0x00) |
+              (bkcr ? 0x04 : 0x00) | (bqcr ? 0x08 : 0x00);
+
+        us ^= st;
+
+        if (move.pr()) {
+            pawn ^= s;
+            switch (sp) {
+                case KNIGHT: knight ^= t; break;
+                case BISHOP: bishop ^= t; break;
+                case ROOK: rook ^= t; break;
+                case QUEEN: queen ^= t; break;
+                default: break; // actually, HCF
+            }
+        } else {
+            switch (sp) {
+                case PAWN: pawn ^= st; break;
+                case KNIGHT: knight ^= st; break;
+                case BISHOP: bishop ^= st; break;
+                case ROOK: rook ^= st; break;
+                case QUEEN: queen ^= st; break;
+                case KING: king ^= st; break;
+            }
+        }
         switch (cp) {
-            case PAWN: pawn ^= t; break;
-            case KNIGHT: knight ^= t; break;
-            case BISHOP: bishop ^= t; break;
-            case ROOK: rook ^= t; break;
-            case QUEEN: queen ^= t; break;
+            case PAWN: pawn ^= t; them ^= t; break;
+            case KNIGHT: knight ^= t; them ^= t; break;
+            case BISHOP: bishop ^= t; them ^= t; break;
+            case ROOK: rook ^= t; them ^= t; break;
+            case QUEEN: queen ^= t; them ^= t; break;
+            default: break;
         }
 
-        us ^= t;
-        if (cp != SPACE) {
-          them ^= t;
-        }
-
-        switch (tp) {
-            case PAWN: pawn ^= t; break;
-            case KNIGHT: knight ^= t; break;
-            case BISHOP: bishop ^= t; break;
-            case ROOK: rook ^= t; break;
-            case QUEEN: queen ^= t; break;
-        }
-
-        if ((sp == PAWN) && (tp == PAWN) &&
-                (cp == SPACE) && (sc != tc)) {
+        if ((sp == PAWN) && (cp == SPACE) && (sc != tc)) {
             // en passant capture
-            Bitboard u = tbm.u();
+            Bitboard u = move.u();
             pawn ^= u;
             them ^= u;
         }
@@ -719,7 +732,7 @@ struct Position {
             us ^= c() ? 0x0000000000000009 : 0x0900000000000000;
         }
     }
-    void legal_moves(uint16_t *out, uint8_t *moves_written) {
+    std::vector<Move> legal_moves() { //uint16_t *out, uint8_t *moves_written) {
         // Step 1. Which player is active? (i.e. Whose turn?)
         // Take the perspective of the moving player, so
         // it becomes 'us' vs 'them'.
@@ -735,14 +748,8 @@ struct Position {
             bool c,
             bool pr,
             Piece sp,
-            // Piece cp,
             uint8_t si,
             uint8_t ti,
-            //bool bqcr,
-            //bool bkcr,
-            //bool wqcr,
-            //bool wkcr,
-            uint8_t epi
             ) {
 
             uint64_t t = 1UL << ti;
@@ -760,12 +767,14 @@ struct Position {
             } else {
                 cp = QUEEN; // by elimination
             }
-            bool c_bqcr = bqcr() && ((si == 4) || (ti == 2) || (si == 0));
-            bool c_bkcr = bkcr() && ((si == 4) || (ti == 7) || (si == 7));
-            bool c_wqcr = wqcr() && ((si == 60) || (ti == 58) || (si == 7));
-            bool c_wkcr = wkcr() && ((si == 60) || (ti == 62) || (si == 63));
-            uint8_t epi = (sp == PAWN) && ((si > ti + 8) || (ti > si + 8))
-            moves.push_back(Move(x));
+            bool bqcr1 = bqcr() && ((si == 4) || (ti == 2) || (si == 0));
+            bool bkcr1 = bkcr() && ((si == 4) || (ti == 7) || (si == 7));
+            bool wqcr1 = wqcr() && ((si == 60) || (ti == 58) || (si == 7));
+            bool wkcr1 = wkcr() && ((si == 60) || (ti == 62) || (si == 63));
+            bool ep1 = (sp == PAWN) && ((si == ti + 16) || (ti == si + 16));
+            uint8_t epc1 = ep1 ? tc : 0;
+
+            moves.push_back(Move(tc, tr, bqcr, bkcr, sc, sr, wqcr, wkcr, cp, sp, pr, c, epc(), ep(), epc1, ep1));
         }
 
         void add_move_s_T(bool c, bool pr, Piece sp,
@@ -1098,8 +1107,8 @@ std::array<Move,44304> compute_move_table() {
     std::array<Move,44304> result {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = Move(i);
-        if (tbm.feasible()) result[j++] = tbm;
+        auto move = Move(i);
+        if (move.feasible()) result[j++] = move;
     }
     return result;
 }
@@ -1107,11 +1116,11 @@ std::array<Position,44304> compute_posmove_table() {
     std::array<Position,44304> result {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = Move(i);
-        if (tbm.feasible()){
+        auto move = Move(i);
+        if (move.feasible()){
           Position p;
           p.play(p);
-          p.play(tbm);
+          p.play(move);
           result[j++] = p;
         }
     }
@@ -1123,8 +1132,8 @@ std::array<uint16_t,16777216> compute_lookup_table() {
     std::array<uint32_t,44304> movetable {};
     uint16_t j = 0;
     for (uint32_t i = 0; i < 256*256*256; ++i) {
-        auto tbm = Move(i);
-        if (tbm.feasible()) movetable[j++] = i;
+        auto move = Move(i);
+        if (move.feasible()) movetable[j++] = i;
     }
     std::array<uint16_t,16777216> result {};
     j = 0;
@@ -1146,26 +1155,26 @@ void moves_csv_to_stdout() {
     uint32_t bcnt = 0;
     uint32_t qcnt = 0;
     uint32_t kcnt = 0;
-    std::cout << "turn, sp, sc, sr, tp, tc, tr, cp, wkcr, wqcr, bkcr, bqcr\n";
+    std::cout << "turn, pr, sp, sc, sr, tc, tr, cp, wkcr, wqcr, bkcr, bqcr\n";
     for ( uint32_t i = 0; i < 256*256*256; ++i) {
-        Move tbm(i);
-        if (tbm.feasible()) {
+        Move move(i);
+        if (move.feasible()) {
             std::cout <<
-                (tbm.c() ? "b" : "w") <<
-                (tbm.pr() ? "*" : "-") <<
-                GLYPHS[tbm.sp()] <<
-                char('a'+tbm.sc()) <<
-                (8-tbm.sr()) <<
-                char('a'+tbm.tc()) <<
-                (8-tbm.tr()) <<
-                GLYPHS[tbm.cp()] <<
-                (tbm.wkcr() ? "K" : "-") <<
-                (tbm.wqcr() ? "Q" : "-") <<
-                (tbm.bkcr() ? "k" : "-") <<
-                (tbm.bqcr() ? "q" : "-") <<
+                (move.c() ? "b" : "w") <<
+                (move.pr() ? "*" : "-") <<
+                GLYPHS[move.sp()] <<
+                char('a'+move.sc()) <<
+                (8-move.sr()) <<
+                char('a'+move.tc()) <<
+                (8-move.tr()) <<
+                GLYPHS[move.cp()] <<
+                (move.wkcr() ? "K" : "-") <<
+                (move.wqcr() ? "Q" : "-") <<
+                (move.bkcr() ? "k" : "-") <<
+                (move.bqcr() ? "q" : "-") <<
                  "\n";
             ++ cnt;
-            switch(tbm.sp()){
+            switch(move.sp()){
                 case PAWN: ++pcnt; break;
                 case KNIGHT: ++ncnt; break;
                 case ROOK: ++rcnt; break;
