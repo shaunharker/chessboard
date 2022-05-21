@@ -875,13 +875,15 @@ struct Position {
         Bitboard const& them = c() ? white : black;
         Bitboard qr = (queen | rook) & them;
         Bitboard qb = (queen | bishop) & them;
+        uint8_t sc = si & 7;
+        uint8_t sr = si >> 3;
         //std::array nswe {n_hash, s_hash, w_hash, e_hash};
-        for (auto const& f : std::array<std::function<uint64_t(uint64_t)>,4>({n_hash, s_hash, w_hash, e_hash})) {
+        for (auto const& f : {n_hash<sc,sr>, s_hash<sc,sr>, w_hash<sc,sr>, e_hash<sc,sr>})) {
             auto [checker, pin] = CAP[(f(them)<<14)|(f(us)<<7)|f(qr)];
             if (checker != 0 && pin == 0) return false;
         }
 
-        for (auto const& f : {nw_hash, ne_hash, sw_hash, se_hash}) {
+        for (auto const& f : {nw_hash<sc,sr>, ne_hash<sc,sr>, sw_hash<sc,sr>, se_hash<sc,sr>}) {
             auto [checker, pin] = CAP[(f(them)<<14)|(f(us)<<7)|f(qb)];
             if (checker != 0 && pin == 0) return false;
         }
