@@ -787,7 +787,7 @@ struct Position {
         Bitboard empty = ~(us | them);
         std::vector<Move> moves {};
 
-        void add_move_s_t(bool c, bool pr, Piece sp, uint8_t si, uint8_t ti) {
+        void add_move_s_t(bool pr, Piece sp, uint8_t si, uint8_t ti) {
             uint64_t t = 1UL << ti;
             Piece cp;
             if (empty & t) {
@@ -858,11 +858,13 @@ struct Position {
         king ^= ok;
 
         // loop through the possibilities
-        auto S = kingthreats(oki) & ~us;
-        while (S) {
-            uint8_t si = ntz(S);
-            S &= (S-1);
-            if (!check(si)) add_move(c(), false, KING, oki, si);
+        uint64_t S, T;
+
+        T = kingthreats(oki) & ~us;
+        while (T) {
+            uint8_t ti = ntz(T);
+            T &= (T-1);
+            if (!check(ti)) add_move_s_t(false, KING, oki, ti);
         }
 
         // put the king back on the board
@@ -994,7 +996,7 @@ struct Position {
 
         // Pawn pushes
         Bitboard our_pawns = pawn & us;
-        Bitboard T = empty & (c() ? (our_pawns << 8) : (our_pawns >> 8));
+        T = empty & (c() ? (our_pawns << 8) : (our_pawns >> 8));
         while (T) {
           auto ti = ntz(T);
           T &= T-1;
