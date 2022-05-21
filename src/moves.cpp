@@ -223,7 +223,7 @@ uint8_t se_hash (Bitboard x, uint8_t row, uint8_t col) {
     return (((file_a * (x & this_diagonal)) >> 56) << (col+1)) & rank_8;
 };
 
-std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
+std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> compute_cap() {
     // compute checks and pins on every possible ray
     //
     // table indexing scheme:
@@ -983,7 +983,7 @@ struct Position {
                  uint8_t ci = oki + step * checker;
                  targets &= INTERPOSITIONS[(oki << 6) | ci];
                } else {
-                 pinned |= 1UL << (oki + step * pin));
+                 pinned |= 1UL << (oki + step * pin);
                }
             }
         };
@@ -1209,10 +1209,11 @@ struct Position {
                 uint8_t row = c() ? 4 : 3;
                 bool pin = false;
                 if (okr == row) {
-                    auto R = (rook & them & (rank_8 << (8*row));
+                    auto R = (rook & them & (rank_8 << (8*row)));
                     while (R) {
                         auto ri = ntz(R);
                         R &= R-1;
+                        uint64_t r = 1UL << ri;
                         // Notice that
                         //   bool expr = ((a < b) && (b <= c)) ||
                         //               ((c < b) && (b <= a));
@@ -1221,17 +1222,15 @@ struct Position {
                         if ((ri < si) == (si < oki)) {
                             uint8_t cnt = 0;
                             if (ri < oki) {
-                                for (uint64_t x = (1UL << ri); x <<= 1;
-                                    x != ok) {
-                                    if (x & empty == 0) cnt += 1;
+                                for (uint64_t x = r<<1; x != ok; x <<= 1) {
+                                    if ((x & empty) == 0) cnt += 1;
                                 }
                             } else { // ri > oki
-                                for (uint64_t x = (1UL << oki); x <<= 1;
-                                    x != (1UL << ri)) {
-                                    if (x & empty == 0) cnt += 1;
+                                for (uint64_t x = ok<<1; x != r; x <<= 1) {
+                                    if ((x & empty) == 0) cnt += 1;
                                 }
                             }
-                            if (cnt == 3) pin = true; // the prohibited case
+                            if (cnt == 2) pin = true; // the prohibited case
                         }
                     }
                 }
@@ -1365,12 +1364,18 @@ void moves_csv_to_stdout() {
 
 int main(int argc, char * argv []) {
     // ... test goes here ...
-    std::cout << "MOVETABLE = [";
-    for (uint16_t code = 0; code < 44304; ++ code) {
-        if (code > 0) std::cout << ", ";
-        std::cout << MOVETABLE[code].X;
+    auto P = Position();
+    auto legal = P.legal_moves();
+    for (auto move : legal) {
+        std::cout << char('a' + move.sc()) << char('8'-move.sr()) << char('a' + move.tc()) << char('8'-move.tr());
     }
-    std::cout << "]\n";
+
+    // std::cout << "MOVETABLE = [";
+    // for (uint16_t code = 0; code < 44304; ++ code) {
+    //     if (code > 0) std::cout << ", ";
+    //     std::cout << MOVETABLE[code].X;
+    // }
+    // std::cout << "]\n";
 
     // Position P;
     // for (int x = 0; x < 100000; ++ x) {
