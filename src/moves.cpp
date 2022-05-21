@@ -136,7 +136,7 @@ constexpr auto wsw(Bitboard x) -> Bitboard {return w(sw(x));}
 
 constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x));}
 
-constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
+Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     // Given a chessboard square i and the Bitboard of empty squares
     // on it's "+"-mask, this function determines those squares
     // a rook or queen is "attacking".
@@ -149,7 +149,7 @@ constexpr Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     return (Y << 14) | (X << 6) | i; // 4
 }
 
-constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
+Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
   // Given a singleton bitboard x and the set of empty squares
   // on it's "x"-mask, this function packages that information
   // into a unique 22-bit key for lookup table access.
@@ -166,73 +166,94 @@ constexpr Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
   return (Y << 14) | (X << 6) | i;
 }
 
-constexpr uint8_t bitreverse8(uint8_t x) {
+uint8_t bitreverse8(uint8_t x) {
   return __builtin_bitreverse8(x);
 }
 
-constexpr uint8_t e_hash (Bitboard x, uint8_t row, uint8_t col) {
+uint8_t e_hash (Bitboard x, uint8_t row, uint8_t col) {
     return (x >> (8*row+col+1)) & rank_8;
 }
 
-constexpr uint8_t n_hash (Bitboard x, uint8_t row, uint8_t col) {
+uint8_t n_hash (Bitboard x, uint8_t row, uint8_t col) {
     return (antidiagonal * (file_a & (x >> (8*row+col+8)))) >> 56;
 }
 
-constexpr uint8_t w_hash (Bitboard x, uint8_t row, uint8_t col) {
+uint8_t w_hash (Bitboard x, uint8_t row, uint8_t col) {
     return bitreverse8(((x >> (8*row)) << (8-col)) & rank_8);
 }
 
-constexpr uint8_t s_hash (Bitboard x, uint8_t row, uint8_t col) {
+uint8_t s_hash (Bitboard x, uint8_t row, uint8_t col) {
     // there is probably slightly faster magic
     return bitreverse8((antidiagonal * (file_a & (x << (8*(8-row)-col)))) >> 56);
 }
 
-constexpr Bitboard nwse_diagonal(uint8_t row, uint8_t col) {
-  if constexpr (row > col) {
+Bitboard nwse_diagonal(uint8_t row, uint8_t col) {
+  if (row > col) {
     return diagonal >> (8*(row-col));
   } else {
     return diagonal << (8*(col-row));
   }
 }
 
-constexpr Bitboard swne_diagonal(uint8_t row, uint8_t col) {
-  if constexpr (row + col < 7) {
+Bitboard swne_diagonal(uint8_t row, uint8_t col) {
+  if (row + col < 7) {
     return antidiagonal << (8*(7 - row+col));
   } else {
     return antidiagonal >> (8*(row+col - 7));
   }
 }
 
-constexpr uint8_t nw_hash (Bitboard x, uint8_t row, uint8_t col) {
-    constexpr Bitboard this_diagonal = nwse_diagonal(row, col);
+uint8_t nw_hash (Bitboard x, uint8_t row, uint8_t col) {
+    Bitboard this_diagonal = nwse_diagonal(row, col);
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
 
-constexpr uint8_t ne_hash (Bitboard x, uint8_t row, uint8_t col) {
-    constexpr Bitboard this_diagonal = swne_diagonal(row, col);
+uint8_t ne_hash (Bitboard x, uint8_t row, uint8_t col) {
+    Bitboard this_diagonal = swne_diagonal(row, col);
     return (((file_a * (x & this_diagonal)) >> 56) >> (col+1)) & rank_8;
 };
 
-constexpr uint8_t sw_hash (Bitboard x, uint8_t row, uint8_t col) {
-    constexpr Bitboard this_diagonal = swne_diagonal(row, col);
+uint8_t sw_hash (Bitboard x, uint8_t row, uint8_t col) {
+    Bitboard this_diagonal = swne_diagonal(row, col);
     return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
 };
 
-constexpr uint8_t se_hash (Bitboard x, uint8_t row, uint8_t col) {
-    constexpr Bitboard this_diagonal = nwse_diagonal(row, col);
+uint8_t se_hash (Bitboard x, uint8_t row, uint8_t col) {
+    Bitboard this_diagonal = nwse_diagonal(row, col);
     return (((file_a * (x & this_diagonal)) >> 56) << (col+1)) & rank_8;
 };
 
 std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
-    // compute checks and pins to the right,
-    // that is, least sig bits are closer to king
-    // 0x00-0x07 0x08-0x0E 0x0F-0x014
-    // slider    us        them
-    std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> result {};
+    // compute checks and pins on every possible ray
+    //
+    // table indexing scheme:
+    // +------------------------------------+
+    // | cap address bits                   |
+    // +-----------+-----------+------------+
+    // | 0x00-0x07 | 0x08-0x0E | 0x0F-0x014 |
+    // | slider    | us        | them       |
+    // +-----------+-----------+------------+
+    //
+    // `slider` gives the bits where a ray-sliding enemy attackers are
+    //
+    // `them` gives the bits where enemy pieces are.
+    //   notice we have `(them & slider) == slider`
+    //
+    // `us` gives the bits where our pieces are.
+    //
+    // each byte orders bits so >> is kingward.
+    // the king position itself can be thought of as -1, rolled
+    //   one off the edge.
+    //
+    // Output:
+    //
+    // auto const& [checker, pin] = cap[slider | (us << 8) | (them << 16)];
+
+    std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> result {};
     for (uint32_t x = 0; x < (1 << 21); ++ x) {
         uint8_t slider = x & 0x7F;
-        uint8_t us = (x >> 7) & 0x7F;
-        uint8_t them = (x >> 14) & 0x7F;
+        uint8_t us = (x >> 8) & 0x7F;
+        uint8_t them = (x >> 16) & 0x7F;
         uint8_t checker;
         if (slider & them) {
           checker = ntz(slider & them);
@@ -248,10 +269,10 @@ std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
         uint8_t pcnt = popcount(us & front);
         switch (pcnt) {
             case 0:
-                result[x] = {checker, 0};
+                result[x] = {checker + 1, 0};
                 break;
             case 1:
-                result[x] = {checker, ntz(us)};
+                result[x] = {checker + 1, ntz(us) + 1};
                 break;
             default:
                 result[x] = {0,0};
@@ -261,7 +282,7 @@ std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> compute_cap() {
     return result;
 }
 
-std::array<std::pair<uint8_t,uint8_t>, (1 << 21)> CAP = compute_cap();
+std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> CAP = compute_cap();
 
 template<typename T> constexpr Bitboard slide(Bitboard x, T f) {
   // T stands for "translation" and we expect it to be a
@@ -872,6 +893,8 @@ struct Position {
     }
 
     bool check(uint8_t si) {
+        // determine if si is attacked by "them" as the board stands
+        Bitboard const& us = c() ? black : white;
         Bitboard const& them = c() ? white : black;
 
         Bitboard qr = (queen | rook) & them;
@@ -880,21 +903,21 @@ struct Position {
         uint8_t sc = si & 7;
         uint8_t sr = si >> 3;
 
-        for (auto const& f : {n_hash, s_hash, w_hash, e_hash})) {
-            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 14) | (f(us, sc, sr) << 7) | f(qr, sc, sr)];
+        for (auto const& f : {n_hash, s_hash, w_hash, e_hash}) {
+            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 16) | (f(us, sc, sr) << 8) | f(qr, sc, sr)];
             if (checker != 0 && pin == 0) return false;
         }
 
         for (auto const& f : {nw_hash, ne_hash, sw_hash, se_hash}) {
-            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 14) | (f(us, sc, sr) << 7) | f(qb)];
+            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 16) | (f(us, sc, sr) << 8) | f(qb, sc, sr)];
             if (checker != 0 && pin == 0) return false;
         }
 
         // knight threats
-        if (knightthreats(oki) & knight & them) return false;
+        if (knightthreats(si) & knight & them) return false;
 
         // pawn threats
-        if (pawnthreats(ok, c()) & pawn & them) return false;
+        if (pawnthreats(1UL << si, c()) & pawn & them) return false;
 
         // safe!
         return true;
@@ -934,18 +957,33 @@ struct Position {
         king ^= ok;
 
         // Are we in check?
-        Bitboard targets = ~us;
-        Bitboard pinned = uint64_t(0); // idea: init pinned as 'them'
 
+        // We compute a bitboard we name "targets" which in the case of a
+        // check gives us the bitboard of acceptable target squares for
+        // non-king pieces. (i.e. they have to interpose or capture)
+        Bitboard targets = ~us;
+
+        // We also compute a bitboard we name "pinned" which gives the
+        // bitboard marking squares holding pieces pinned to the active
+        // king by a would-be checker.
+        Bitboard pinned = uint64_t(0);
+
+        // Our algorithm proceeds by searching in each of the 8 rays
+        // from the king's position. Each ray is processed with a hash
+        // table CAP and we receive information (checker, pin) which we
+        // use to key into the INTERPOSITIONS table, which gives a
+        // bitboard telling us the allowed squares a non-king piece
+        // must target in order to deal with the check (i.e. either
+        // interpose or capture the attacker giving check).
 
         auto check_and_pin_search = [&](auto&& f, uint8_t x, int8_t step) {
-            auto const& [checker, pin] = CAP[(f(them, sc, sr) << 14) | (f(us, sc, sr) << 7) | f(x, sc, sr)];
+            auto const& [checker, pin] = CAP[(f(them, okc, okr) << 16) | (f(us, okc, okr) << 8) | f(x, okc, okr)];
             if (checker != 0) {
                if (pin == 0) {
-                 uint8_t ci = oki + step * (checker + 1);
+                 uint8_t ci = oki + step * checker;
                  targets &= INTERPOSITIONS[(oki << 6) | ci];
                } else {
-                 pinned |= 1UL << (oki + step * (pin + 1));
+                 pinned |= 1UL << (oki + step * pin));
                }
             }
         };
@@ -978,8 +1016,31 @@ struct Position {
           targets &= (1UL << si);
         }
 
-        if (targets == 0) return moves;
+        if (targets == 0) { // king must move
+            return moves;
+        }
 
+        if (targets == -1) { // no checks
+            // Kingside Castle
+            if (c() ? bkcr() : wkcr()) {
+                Bitboard conf = (c() ? 240UL : (240UL << 56));
+                if (((us & conf) == (c() ? 144UL : (144UL << 56))) &&
+                    ((empty & conf) == (c() ? 96UL : (96UL << 56))) &&
+                    !check(oki+1) && !check(oki+2)) {
+                    add_move_s_T(moves, false, KING, oki, oki + 2);
+                }
+            }
+
+            // Queenside Castle
+            if (c() ? bqcr() : wqcr()) {
+                Bitboard conf = (c() ? 31UL : (31UL << 56));
+                if (((us & conf) == (c() ? 17UL : (17UL << 56))) &&
+                    ((empty & conf) == (c() ? 14UL : (14UL << 56))) &&
+                    !check(oki-1) && !check(oki-2)) {
+                    add_move_s_T(moves, false, KING, oki, oki + 2);
+                }
+            }
+        }
 
         // Queen Moves
         S = queen & us;
@@ -991,20 +1052,20 @@ struct Position {
                 uint8_t sr = si >> 3;
                 if (sc == okc) {
                     Bitboard F = file_a << sc;
-                    add_s_T(moves, false, QUEEN, si, F & rookthreats(si, empty) & not_us);
+                    add_move_s_T(moves, false, QUEEN, si, F & rookthreats(si, empty) & ~us);
                 } else if (sr == okr) {
                     Bitboard R = rank_8 << (8*sr);
-                    add_s_T(moves, false, QUEEN, si, R & rookthreats(si, empty) & not_us);
+                    add_move_s_T(moves, false, QUEEN, si, R & rookthreats(si, empty) & ~us);
                 } else if ((sr + sc) == (okr + okc)) {
                     Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
-                    add_s_T(moves, false, QUEEN, si, A & bishopthreats(si, empty) & not_us);
+                    add_move_s_T(moves, false, QUEEN, si, A & bishopthreats(si, empty) & ~us);
                 } else { // sr - sc == okr - okc
                     Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
-                    add_s_T(moves, false, QUEEN, si, D & bishopthreats(si, empty) & not_us);
+                    add_move_s_T(moves, false, QUEEN, si, D & bishopthreats(si, empty) & ~us);
                 }
             } else {
-                add_s_T(moves, false, QUEEN, si, rookthreats(si, empty) & not_us);
-                add_s_T(moves, false, QUEEN, si, bishopthreats(si, empty) & not_us);
+                add_move_s_T(moves, false, QUEEN, si, rookthreats(si, empty) & ~us);
+                add_move_s_T(moves, false, QUEEN, si, bishopthreats(si, empty) & ~us);
             }
         }
 
@@ -1017,14 +1078,14 @@ struct Position {
                 uint8_t sc = si & 7;
                 uint8_t sr = si >> 3;
                 if (sc == okc) {
-                    Bitboard F = file_a << col;
-                    add_s_T(moves, false, ROOK, si, F & rookthreats(si, empty) & not_us);
+                    Bitboard F = file_a << okc;
+                    add_move_s_T(moves, false, ROOK, si, F & rookthreats(si, empty) & ~us);
                 } else { // sr == okr
                     Bitboard R = rank_8 << (8*okr);
-                    add_s_T(moves, false, ROOK, si, R & rookthreats(si, empty) & not_us);
+                    add_move_s_T(moves, false, ROOK, si, R & rookthreats(si, empty) & ~us);
                 }
             } else {
-                add_s_T(moves, false, ROOK, si, rookthreats(si, empty) & not_us);
+                add_move_s_T(moves, false, ROOK, si, rookthreats(si, empty) & ~us);
             }
         }
 
@@ -1038,41 +1099,41 @@ struct Position {
                 uint8_t sr = si >> 3;
                 if (sc + sr == okr + okc) {
                     Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
-                    add_s_T(moves, false, BISHOP, si, A & bishopthreats(si, empty) & not_us);
+                    add_move_s_T(moves, false, BISHOP, si, A & bishopthreats(si, empty) & ~us);
                 } else { // sr - sc == okr - okc
                     Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
-                    add_s_T(moves, false, BISHOP, si, D & bishopthreats(si, empty) & not_us);
+                    add_move_s_T(moves, false, BISHOP, si, D & bishopthreats(si, empty) & ~us);
                 }
             } else {
-                add_s_T(moves, false, BISHOP, si, bishopthreats(si, empty) & not_us);
+                add_move_s_T(moves, false, BISHOP, si, bishopthreats(si, empty) & ~us);
             }
         }
 
         // Knight moves
         S = knight & us & ~pinned;
         while (S) {
-          uint8_t si = ntz(S);
-          S &= S-1;
-          add_s_T(moves, false, KNIGHT, si, knightthreats(si) & targets);
+            uint8_t si = ntz(S);
+            S &= S-1;
+            add_move_s_T(moves, false, KNIGHT, si, knightthreats(si) & targets);
         }
 
         // Pawn pushes
         Bitboard our_pawns = pawn & us;
         T = empty & (c() ? (our_pawns << 8) : (our_pawns >> 8));
         while (T) {
-          auto ti = ntz(T);
-          T &= T-1;
-          Square si = ti - (c() ? 8 : -8);
-          Bitboard s = 1UL << si;
-          if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
-          if ((1UL << ti) & endrank) {
-            add_s_t(moves, true, QUEEN, si, ti);
-            add_s_t(moves, true, ROOK, si, ti);
-            add_s_t(moves, true, BISHOP, si, ti);
-            add_s_t(moves, true, KNIGHT, si, ti);
-          } else {
-            add_s_t(moves, false, PAWN, si, ti);
-          }
+            auto ti = ntz(T);
+            T &= T-1;
+            Square si = ti - (c() ? 8 : -8);
+            Bitboard s = 1UL << si;
+            if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
+            if ((1UL << ti) & (rank_1 | rank_8)) {
+                add_move_s_T(moves, true, QUEEN, si, ti);
+                add_move_s_T(moves, true, ROOK, si, ti);
+                add_move_s_T(moves, true, BISHOP, si, ti);
+                add_move_s_T(moves, true, KNIGHT, si, ti);
+            } else {
+                add_move_s_T(moves, false, PAWN, si, ti);
+            }
         }
 
         // Pawn captures (except en passant)
@@ -1098,13 +1159,13 @@ struct Position {
                     if ((sr + sc) == (tr + tc)) continue;
                 }
             }
-            if (t & endrank) {
-              add_s_t(moves, true, QUEEN, si, ti);
-              add_s_t(moves, true, ROOK, si, ti);
-              add_s_t(moves, true, BISHOP, si, ti);
-              add_s_t(moves, true, KNIGHT, si, ti);
+            if ((1UL << ti) & (rank_1 | rank_8)) {
+              add_move_s_T(moves, true, QUEEN, si, ti);
+              add_move_s_T(moves, true, ROOK, si, ti);
+              add_move_s_T(moves, true, BISHOP, si, ti);
+              add_move_s_T(moves, true, KNIGHT, si, ti);
             } else {
-              add_s_t(moves, false, PAWN, si, ti);
+              add_move_s_T(moves, false, PAWN, si, ti);
             }
           }
         }
@@ -1120,7 +1181,7 @@ struct Position {
             Square si = ti - (c() ? 16 : -16);
             Bitboard s = 1UL << si;
             if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
-            add_s_t(moves, false, PAWN, si, ti);
+            add_move_s_T(moves, false, PAWN, si, ti);
         }
 
         // A discovered check cannot be countered with
@@ -1174,33 +1235,11 @@ struct Position {
                         }
                     }
                 }
-                if (!pin) add_s_t(moves, false, PAWN, si, epi());
+                if (!pin) add_move_s_T(moves, false, PAWN, si, epi());
             }
         }
 
-        // Kingside Castle
-        if (c() ? bkcr() : wkcr()) {
-          Bitboard conf = (c() ? 240UL : (240UL << 56));
-          if ((us & conf) == (c() ? 144UL : (144UL << 56))) {
-            if ((empty & conf) == (c() ? 96UL : (96UL << 56))) {
-              if (!check(oki) && !check(oki+1) && !check(oki+2)) {
-                add_s_t(moves, false, KING, oki, oki + 2);
-              }
-            }
-          }
-        }
 
-        // Queenside Castle
-        if (c() ? bqcr() : wqcr()) {
-          auto conf = (c() ? 31UL : (31UL << 56));
-          if ((us & conf) == (c() ? 17UL : (17UL << 56))) {
-            if ((empty & conf) == (c() ? 14UL : (14UL << 56))) {
-              if (!check(oki) && !check(oki-1) && !check(oki-2)) {
-                add_s_t(moves, false, KING, oki, oki + 2);
-              }
-            }
-          }
-        }
 
         return moves;
     }
