@@ -232,60 +232,73 @@ uint8_t bitreverse8(uint8_t x) {
   return __builtin_bitreverse8(x);
 }
 
-uint8_t e_hash (Bitboard x, uint8_t row, uint8_t col) {
-    return (x >> (8*row+col+1)) & rank_8;
-}
-
-uint8_t n_hash (Bitboard x, uint8_t row, uint8_t col) {
-    return (antidiagonal * (file_a & (x >> (8*row+col+8)))) >> 56;
-}
-
-uint8_t w_hash (Bitboard x, uint8_t row, uint8_t col) {
-    return bitreverse8(((x >> (8*row)) << (8-col)) & rank_8);
-}
-
-uint8_t s_hash (Bitboard x, uint8_t row, uint8_t col) {
-    // there is probably slightly faster magic
-    return bitreverse8((antidiagonal * (file_a & (x << (8*(8-row)-col)))) >> 56);
-}
-
-constexpr Bitboard off_diagonal(uint8_t row, uint8_t col) {
-  if (row > col) {
-    return diagonal >> (8*(row-col));
-  } else {
-    return diagonal << (8*(col-row));
-  }
-}
-
-constexpr Bitboard off_antidiagonal(uint8_t row, uint8_t col) {
-  if (row + col < 7) {
-    return antidiagonal << (8*(7 - row+col));
-  } else {
-    return antidiagonal >> (8*(row+col - 7));
-  }
-}
-
-
+// constexpr Bitboard off_diagonal(uint8_t row, uint8_t col) {
+//   if (row > col) {
+//     return diagonal >> (8*(row-col));
+//   } else {
+//     return diagonal << (8*(col-row));
+//   }
+// }
+//
+// constexpr Bitboard off_antidiagonal(uint8_t row, uint8_t col) {
+//   if (row + col < 7) {
+//     return antidiagonal << (8*(7 - row+col));
+//   } else {
+//     return antidiagonal >> (8*(row+col - 7));
+//   }
+// }
 
 uint8_t nw_scan (Bitboard x, uint8_t row, uint8_t col) {
-    x <<= 8 * (7 - row) + (7 - col);
-    return bitreverse8((file_a * (x & diagonal)) >> 56);
-};
+    x &= NW_RAY[(row << 3) | col];
+    x <<= (8*(7-row) + (7-col)); // <<= 63 - i   (0x3F ^ i)
+    return bitreverse8((file_a * x) >> 56);
+}
+
+uint8_t n_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x &= N_RAY[(row << 3) | col];
+    x <<= (8 * (7 - row) + (7 - col));
+    x >>= 7;
+    return (antidiagonal * x) >> 56;
+}
 
 uint8_t ne_scan (Bitboard x, uint8_t row, uint8_t col) {
-    x <<= 8 * (7 - row); x >>= col;
-    return (file_a * (x & antidiagonal)) >> 56;
-};
+    x &= NE_RAY[(row << 3) | col];
+    x <<= 8 * (7 - row);
+    x >>= col;
+    return (file_a * x)) >> 56;
+}
+
+uint8_t w_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x &= W_RAY[(row << 3) | col];
+    x <<= (8 * (7 - row) + (7 - col));
+    x >>= 56;
+    return bitreverse8(x);
+}
+
+uint8_t e_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x &= E_RAY[(row << 3) | col];
+    x >>= (8 * row + col);
+    return x;
+}
 
 uint8_t sw_scan (Bitboard x, uint8_t row, uint8_t col) {
-    x >>= 8 * row; x <<= 7 - col;
-    return bitreverse8((file_a * (x & antidiagonal)) >> 56);
-};
+    x &= SW_RAY[(row << 3) | col];
+    x >>= 8 * row;
+    x <<= 7 - col;
+    return bitreverse8((file_a * x) >> 56);
+}
+
+uint8_t s_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x &= S_RAY[(row << 3) | col];
+    x >>= (8 * row + col);
+    return bitreverse8((antidiagonal * x) >> 56);
+}
 
 uint8_t se_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x &= SE_RAY[(row << 3) | col];
     x >>= 8 * row + col;
-    return (file_a * (x & diagonal)) >> 56;
-};
+    return (file_a * x) >> 56;
+}
 
 std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> compute_cap() {
     // compute checks and pins on every possible ray
@@ -294,7 +307,7 @@ std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> compute_cap() {
     // +------------------------------------+
     // | cap address bits                   |
     // +-----------+-----------+------------+
-    // | 0x00-0x07 | 0x08-0x0E | 0x0F-0x014 |
+    // | 0x00-0x07 | 0x08-0x0F | 0x10-0x018 |
     // | slider    | us        | them       |
     // +-----------+-----------+------------+
     //
@@ -314,29 +327,29 @@ std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> compute_cap() {
     // auto const& [checker, pin] = cap[slider | (us << 8) | (them << 16)];
 
     std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> result {};
-    for (uint32_t x = 0; x < (1 << 21); ++ x) {
-        uint8_t slider = x & 0x7F;
-        uint8_t us = (x >> 8) & 0x7F;
-        uint8_t them = (x >> 16) & 0x7F;
+    for (uint32_t x = 0; x < (1 << 24); ++ x) {
+        uint8_t slider = x & 0xFF;
+        uint8_t us = (x >> 8) & 0xFF;
+        uint8_t them = (x >> 16) & 0xFF;
         uint8_t checker;
         if (slider & them) {
-          checker = ntz(slider & them);
+            checker = ntz(slider & them);
         } else {
-          result[x] = {0,0};
-          continue;
+            result[x] = {0,0};
+            continue;
         }
-        uint8_t front = (1 << checker) - 1;
-        if (them & front) {
-          result[x] = {0,0};
-          continue;
+        uint8_t mask = ((1 << checker) - 1) ^ 1;
+        if (them & mask) {
+            result[x] = {0,0};
+            continue;
         }
-        uint8_t pcnt = popcount(us & front);
+        uint8_t pcnt = popcount(us & mask);
         switch (pcnt) {
             case 0:
-                result[x] = {checker + 1, 0};
+                result[x] = {checker, 0};
                 break;
             case 1:
-                result[x] = {checker + 1, ntz(us) + 1};
+                result[x] = {checker, ntz(us & mask)};
                 break;
             default:
                 result[x] = {0,0};
@@ -972,7 +985,7 @@ struct Position {
         uint8_t sc = si & 7;
         uint8_t sr = si >> 3;
 
-        for (auto const& f : {n_hash, s_hash, w_hash, e_hash}) {
+        for (auto const& f : {n_scan, s_scan, w_scan, e_scan}) {
             uint32_t address = (f(them, sc, sr) << 16) | (f(us, sc, sr) << 8) | f(qr, sc, sr);
             auto const& [checker, pin] = CAP[address];
             if (checker != 0 && pin == 0) {
@@ -981,7 +994,7 @@ struct Position {
             }
         }
 
-        for (auto const& f : {nw_hash, ne_hash, sw_hash, se_hash}) {
+        for (auto const& f : {nw_scan, ne_scan, sw_scan, se_scan}) {
             uint32_t address = (f(them, sc, sr) << 16) | (f(us, sc, sr) << 8) | f(qb, sc, sr);
             auto const& [checker, pin] = CAP[address];
             std::cout << "[b]";
