@@ -99,6 +99,10 @@ constexpr Bitboard file_a       = 0x0101010101010101UL;
 constexpr Bitboard file_h       = 0x8080808080808080UL;
 constexpr Bitboard diagonal     = 0x8040201008040201UL;
 constexpr Bitboard antidiagonal = 0x0102040810204080UL;
+constexpr uint64_t SE_MASK = file_a * antidiagonal;
+constexpr uint64_t NW_MASK = (~SE_MASK) | antidiagonal;
+constexpr uint64_t SW_MASK = file_a * diagonal;
+constexpr uint64_t NE_MASK = (~SW_MASK) | diagonal;
 
 // The following functions translate bitboards "west" "east"
 // "south" "north" and so on. Bits do not "roll around" but instead
@@ -135,6 +139,64 @@ constexpr auto ene(Bitboard x) -> Bitboard {return e(ne(x));}
 constexpr auto wsw(Bitboard x) -> Bitboard {return w(sw(x));}
 
 constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x));}
+
+constexpr uint64_t nw_ray(uint8_t row, uint8_t col) {
+    return (diagonal >> (8 * (7 - row) + (7 - col))) & ((row < col) ? NE_MASK : SW_MASK);
+}
+
+constexpr uint64_t n_ray(uint8_t row, uint8_t col) {
+    return file_h >> (8 * (7 - row) - (7-col));
+}
+
+constexpr uint64_t ne_ray(uint8_t row, uint8_t col) {
+    return (antidiagonal >> (8 * (7 - row) + (7 - col))) & ((row + col < 7) ? NW_MASK : SE_MASK);
+}
+
+constexpr uint64_t w_ray(uint8_t row, uint8_t col) {
+    return (rank_8 >> (7 - col)) << (8 * row);
+}
+
+constexpr uint64_t e_ray(uint8_t row, uint8_t col) {
+    return ((rank_8 << col) & rank_8) << (8 * row);
+}
+
+constexpr uint64_t sw_ray(uint8_t row, uint8_t col) {
+    return (antidiagonal << (8 * row + (col - 7))) & ((row + col < 7) ? NW_MASK : SE_MASK);
+}
+
+constexpr uint64_t s_ray(uint8_t row, uint8_t col) {
+    return rank_1 << (8 * row + col);
+}
+
+constexpr uint64_t se_ray(uint8_t row, uint8_t col) {
+    return (diagonal << (8 * row + col)) & ((row < col) ? NE_MASK : SW_MASK);
+}
+
+template <RayFun ray>
+std::array<uint64_t, 64>
+compute_ray(){
+    std::array<uint64_t, 64> result;
+    for (uint8_t i = 0; i < 64; ++ i) {
+        result[i] = ray(i >> 3, i & 7);
+    }
+    return result;
+}
+
+std::array<uint64_t, 64> NW_RAY = compute_ray<nw_ray>();
+
+std::array<uint64_t, 64>  N_RAY = compute_ray<n_ray>();
+
+std::array<uint64_t, 64> NE_RAY = compute_ray<ne_ray>();
+
+std::array<uint64_t, 64>  W_RAY = compute_ray<w_ray>();
+
+std::array<uint64_t, 64>  E_RAY = compute_ray<e_ray>();
+
+std::array<uint64_t, 64> SW_RAY = compute_ray<sw_ray>();
+
+std::array<uint64_t, 64>  S_RAY = compute_ray<s_ray>();
+
+std::array<uint64_t, 64> SE_RAY = compute_ray<se_ray>();
 
 Bitboard rookcollisionfreehash(Square i, Bitboard const& E) {
     // Given a chessboard square i and the Bitboard of empty squares
@@ -187,7 +249,7 @@ uint8_t s_hash (Bitboard x, uint8_t row, uint8_t col) {
     return bitreverse8((antidiagonal * (file_a & (x << (8*(8-row)-col)))) >> 56);
 }
 
-Bitboard nwse_diagonal(uint8_t row, uint8_t col) {
+constexpr Bitboard off_diagonal(uint8_t row, uint8_t col) {
   if (row > col) {
     return diagonal >> (8*(row-col));
   } else {
@@ -195,7 +257,7 @@ Bitboard nwse_diagonal(uint8_t row, uint8_t col) {
   }
 }
 
-Bitboard swne_diagonal(uint8_t row, uint8_t col) {
+constexpr Bitboard off_antidiagonal(uint8_t row, uint8_t col) {
   if (row + col < 7) {
     return antidiagonal << (8*(7 - row+col));
   } else {
@@ -203,24 +265,26 @@ Bitboard swne_diagonal(uint8_t row, uint8_t col) {
   }
 }
 
-uint8_t nw_hash (Bitboard x, uint8_t row, uint8_t col) {
-    Bitboard this_diagonal = nwse_diagonal(row, col);
-    return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
+
+
+uint8_t nw_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x <<= 8 * (7 - row) + (7 - col);
+    return bitreverse8((file_a * (x & diagonal)) >> 56);
 };
 
-uint8_t ne_hash (Bitboard x, uint8_t row, uint8_t col) {
-    Bitboard this_diagonal = swne_diagonal(row, col);
-    return (((file_a * (x & this_diagonal)) >> 56) >> (col+1)) & rank_8;
+uint8_t ne_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x <<= 8 * (7 - row); x >>= col;
+    return (file_a * (x & antidiagonal)) >> 56;
 };
 
-uint8_t sw_hash (Bitboard x, uint8_t row, uint8_t col) {
-    Bitboard this_diagonal = swne_diagonal(row, col);
-    return bitreverse8((((file_a * (x & this_diagonal)) >> 56) << (8-col)) & rank_8);
+uint8_t sw_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x >>= 8 * row; x <<= 7 - col;
+    return bitreverse8((file_a * (x & antidiagonal)) >> 56);
 };
 
-uint8_t se_hash (Bitboard x, uint8_t row, uint8_t col) {
-    Bitboard this_diagonal = nwse_diagonal(row, col);
-    return (((file_a * (x & this_diagonal)) >> 56) << (col+1)) & rank_8;
+uint8_t se_scan (Bitboard x, uint8_t row, uint8_t col) {
+    x >>= 8 * row + col;
+    return (file_a * (x & diagonal)) >> 56;
 };
 
 std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> compute_cap() {
@@ -920,14 +984,18 @@ struct Position {
         for (auto const& f : {nw_hash, ne_hash, sw_hash, se_hash}) {
             uint32_t address = (f(them, sc, sr) << 16) | (f(us, sc, sr) << 8) | f(qb, sc, sr);
             auto const& [checker, pin] = CAP[address];
+            std::cout << "[b]";
             if (checker != 0 && pin == 0) {
                 std::cout << "Check Type 2\n";
-                std::cout << address << "\n";
-                std::cout << us << "\n";
-                std::cout << them << "\n";
+                std::cout << address << "\n-us->\n";
+                std::cout << Vizboard({us}) << "\n-them->\n";
+                std::cout << Vizboard({them}) << "\n";
+                std::cout << "\n-qb->\n";
+                std::cout << Vizboard({qb}) << "\n";
                 std::cout << int(si) << "\n";
-                std::cout << "sliders " << f(them, sc, sr) << "\n";
-                std::cout << "
+                std::cout << "sliders " << std::bitset<8>(f(qb, sc, sr)) << "\n";
+                std::cout << "us " << std::bitset<8>(f(us, sc, sr))  << "\n";
+                std::cout << "them " << std::bitset<8>(f(them, sc, sr)) << "\n";
                 return true;
             }
         }
