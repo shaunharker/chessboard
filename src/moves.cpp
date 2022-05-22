@@ -165,7 +165,7 @@ constexpr uint64_t sw_ray(uint8_t row, uint8_t col) {
 }
 
 constexpr uint64_t s_ray(uint8_t row, uint8_t col) {
-    return rank_1 << (8 * row + col);
+    return file_a << (8 * row + col);
 }
 
 constexpr uint64_t se_ray(uint8_t row, uint8_t col) {
@@ -1646,7 +1646,16 @@ uint64_t checktest(Position & board, int depth) {
 // }
 
 int main(int argc, char * argv []) {
-
+    // uint8_t sr = 4;
+    // uint8_t sc = 4;
+    // std::cout << Vizboard({NW_RAY[(sr << 3) | sc]}) << "\n";
+    // std::cout << Vizboard({ N_RAY[(sr << 3) | sc]}) << "\n";
+    // std::cout << Vizboard({NE_RAY[(sr << 3) | sc]}) << "\n";
+    // std::cout << Vizboard({ W_RAY[(sr << 3) | sc]}) << "\n";
+    // std::cout << Vizboard({ E_RAY[(sr << 3) | sc]}) << "\n";
+    // std::cout << Vizboard({SW_RAY[(sr << 3) | sc]}) << "\n";
+    // std::cout << Vizboard({ S_RAY[(sr << 3) | sc]}) << "\n";
+    // std::cout << Vizboard({SE_RAY[(sr << 3) | sc]}) << "\n";
     for (int d = 0; d < 5; ++ d) {
         auto P = Position(); // new chessboard
         std::cout << "\n----------\ndepth " << d << "\n";
