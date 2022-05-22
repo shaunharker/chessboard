@@ -149,11 +149,7 @@ constexpr uint64_t n_ray(uint8_t row, uint8_t col) {
 }
 
 constexpr uint64_t ne_ray(uint8_t row, uint8_t col) {
-    if (row + col < 7) {
-        return (antidiagonal >> (8 * (7 - row) - col)) & NW_MASK;
-    } else {
-        return (antidiagonal << col) & SE_MASK;
-    }
+    return ((antidiagonal << col) >> (8 * (7 - row))) & ((row + col < 7) ? NW_MASK : SE_MASK);
 }
 
 constexpr uint64_t w_ray(uint8_t row, uint8_t col) {
@@ -165,7 +161,7 @@ constexpr uint64_t e_ray(uint8_t row, uint8_t col) {
 }
 
 constexpr uint64_t sw_ray(uint8_t row, uint8_t col) {
-    return (antidiagonal << (8 * row + (col - 7))) & ((row + col < 7) ? NW_MASK : SE_MASK);
+    return ((antidiagonal >> (7 - col)) << (8 * row)) & ((row + col < 7) ? NW_MASK : SE_MASK);
 }
 
 constexpr uint64_t s_ray(uint8_t row, uint8_t col) {
