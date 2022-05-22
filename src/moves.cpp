@@ -58,7 +58,7 @@ typedef int Square;
 struct Vizboard {Bitboard x;};
 
 std::ostream & operator << (std::ostream & stream, Vizboard x) {
-  stream << "as bitset: " << std::bitset<64>(x.x) << "\n";
+  //stream << "as bitset: " << std::bitset<64>(x.x) << "\n";
   for (int row = 0; row < 8; ++ row) {
     for (int col = 0; col < 8; ++ col) {
       stream << ((x.x & (1UL << (8*row+col))) ? "1" : "0");
@@ -145,11 +145,15 @@ constexpr uint64_t nw_ray(uint8_t row, uint8_t col) {
 }
 
 constexpr uint64_t n_ray(uint8_t row, uint8_t col) {
-    return file_h >> (8 * (7 - row) - (7-col));
+    return file_h >> (8 * (7 - row) + (7 - col));
 }
 
 constexpr uint64_t ne_ray(uint8_t row, uint8_t col) {
-    return (antidiagonal >> (8 * (7 - row) + (7 - col))) & ((row + col < 7) ? NW_MASK : SE_MASK);
+    if (row + col < 7) {
+        return (antidiagonal >> (8 * (7 - row) - col)) & NW_MASK;
+    } else {
+        return (antidiagonal << col) & SE_MASK;
+    }
 }
 
 constexpr uint64_t w_ray(uint8_t row, uint8_t col) {
@@ -258,7 +262,8 @@ uint8_t n_scan (Bitboard x, uint8_t row, uint8_t col) {
     x &= N_RAY[(row << 3) | col];
     x <<= (8 * (7 - row) + (7 - col));
     x >>= 7;
-    return (antidiagonal * x) >> 56;
+    //std::cout << "[n_scan " << x << "]";
+    return (diagonal * x) >> 56;
 }
 
 uint8_t ne_scan (Bitboard x, uint8_t row, uint8_t col) {
@@ -291,13 +296,16 @@ uint8_t sw_scan (Bitboard x, uint8_t row, uint8_t col) {
 uint8_t s_scan (Bitboard x, uint8_t row, uint8_t col) {
     x &= S_RAY[(row << 3) | col];
     x >>= (8 * row + col);
-    return bitreverse8((antidiagonal * x) >> 56);
+    return (antidiagonal * x) >> 56;
 }
 
 uint8_t se_scan (Bitboard x, uint8_t row, uint8_t col) {
-    x &= SE_RAY[(row << 3) | col];
-    x >>= 8 * row + col;
-    return (file_a * x) >> 56;
+    //std::cout << "se_scan " << std::bitset<64>(x) << " " << int(row) << " " << int(col) << "\n";
+    //std::cout << Vizboard({x}) << "\n";
+    //std::cout << Vizboard({SE_RAY[(row << 3) | col]}) << "\n";
+    uint64_t z = (file_a * ((x & SE_RAY[(row << 3) | col]) >> (8 * row + col))) >> 56;
+    //std::cout << " = " << std::bitset<8>(z) << "]\n";
+    return z;
 }
 
 std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> compute_cap() {
@@ -986,41 +994,84 @@ struct Position {
         uint8_t sr = si >> 3;
 
         for (auto const& f : {n_scan, s_scan, w_scan, e_scan}) {
-            uint32_t address = (f(them, sc, sr) << 16) | (f(us, sc, sr) << 8) | f(qr, sc, sr);
+            uint8_t f_them = f(them, sr, sc);
+            uint8_t f_us = f(us, sr, sc);
+            uint8_t f_qr = f(qr, sr, sc);
+            uint32_t address = (f_them << 16) | (f_us << 8) | f_qr;
             auto const& [checker, pin] = CAP[address];
+            //std::cout << "[qr]";
             if (checker != 0 && pin == 0) {
-                std::cout << "Check Type 1\n";
+                // std::cout << "Check Type 1\n";
+                // std::cout << "\n-us->\n";
+                // std::cout << Vizboard({us}) << "\n";
+                // std::cout << "-them->\n";
+                // std::cout << Vizboard({them}) << "\n";
+                // std::cout << "\n-qr->\n";
+                // std::cout << Vizboard({qr}) << "\n";
+                // std::cout << "\n-n->\n";
+                // std::cout << Vizboard({N_RAY[(sr << 3) | sc]}) << "\n";
+                // std::cout << int(si) << "\n";
+                // uint64_t x = us;
+                // std::cout << Vizboard({x}) << " ^ qr\n";
+                // x &= N_RAY[(sr << 3) | sc];
+                // std::cout << Vizboard({x}) << " ^ &N_RAY\n";
+                // x <<= (8 * (7 - sr) + (7 - sc));
+                // std::cout << Vizboard({x}) << " ^ <<= a bunch\n";
+                // x >>= 7;
+                // std::cout << Vizboard({x}) << " ^ >>= 7\n";
+                // x = (antidiagonal * x) >> 56;
+                // std::cout << Vizboard({x}) << " projected\n";
+                // std::cout << "address " << std::bitset<24>(address) << "\n";
+                // std::cout << "sliders " << std::bitset<8>(f(qr, sr, sc)) << "\n";
+                // std::cout << "us " << std::bitset<8>(f(us, sr, sc))  << "\n";
+                // std::cout << "them " << std::bitset<8>(f(them, sr, sc)) << "\n";
                 return true;
             }
         }
 
         for (auto const& f : {nw_scan, ne_scan, sw_scan, se_scan}) {
-            uint32_t address = (f(them, sc, sr) << 16) | (f(us, sc, sr) << 8) | f(qb, sc, sr);
+            uint8_t f_them = f(them, sr, sc);
+            uint8_t f_us = f(us, sr, sc);
+            uint8_t f_qb = f(qb, sr, sc);
+            uint32_t address = (f_them << 16) | (f_us << 8) | f_qb;
             auto const& [checker, pin] = CAP[address];
-            std::cout << "[b]";
+            //std::cout << "[qb]";
             if (checker != 0 && pin == 0) {
-                std::cout << "Check Type 2\n";
-                std::cout << address << "\n-us->\n";
-                std::cout << Vizboard({us}) << "\n-them->\n";
-                std::cout << Vizboard({them}) << "\n";
-                std::cout << "\n-qb->\n";
-                std::cout << Vizboard({qb}) << "\n";
-                std::cout << int(si) << "\n";
-                std::cout << "sliders " << std::bitset<8>(f(qb, sc, sr)) << "\n";
-                std::cout << "us " << std::bitset<8>(f(us, sc, sr))  << "\n";
-                std::cout << "them " << std::bitset<8>(f(them, sc, sr)) << "\n";
+                // std::cout << "Check Type 2\n";
+                // std::cout << "\n-us->\n";
+                // std::cout << Vizboard({us}) << "\n";
+                // std::cout << "-them->\n";
+                // std::cout << Vizboard({them}) << "\n";
+                // std::cout << "\n-qb->\n";
+                // std::cout << Vizboard({qb}) << "\n";
+                // std::cout << "\n-se->\n";
+                // std::cout << Vizboard({SE_RAY[(sr << 3) | sc]}) << "\n";
+                // std::cout << "\n Origin square = " << int(si) << "\n\n";
+                // uint64_t x = us;
+                // std::cout << Vizboard({x}) << " ^ *\n";
+                // x &= SE_RAY[(sr << 3) | sc];
+                // std::cout << Vizboard({x}) << " ^ & SE_RAY\n";
+                // x >>= 8 * sr + sc;
+                // std::cout << Vizboard({x}) << " ^ >>= 8 * sr + sc\n";
+                // x = (file_a * x) >> 56;
+                // std::cout << Vizboard({x}) << " = (file_a * x) >> 56\n";
+                // std::cout << "c.f. " << int(f(us, sc, sr)) << "\n";
+                // std::cout << "address " << std::bitset<24>(address) << "\n";
+                // std::cout << "sliders " << std::bitset<8>(f(qb, sr, sc)) << "\n";
+                // std::cout << "us " << std::bitset<8>(f(us, sr, sc))  << "\n";
+                // std::cout << "them " << std::bitset<8>(f(them, sr, sc)) << "\n";
                 return true;
             }
         }
 
         // knight threats
         if (knightthreats(si) & knight & them) {
-            std::cout << "Check Type 3\n";
-             return true;
+            //std::cout << "Check Type 3\n";
+            return true;
         }
         // pawn threats
         if (pawnthreats(1UL << si, c()) & pawn & them) {
-            std::cout << "Check Type 4\n";
+            //std::cout << "Check Type 4\n";
             return true;
         }
 
@@ -1089,7 +1140,7 @@ struct Position {
         // interpose or capture the attacker giving check).
 
         auto check_and_pin_search = [&](auto&& f, uint64_t x, int8_t step) {
-            auto const& [checker, pin] = CAP[(f(them, okc, okr) << 16) | (f(us, okc, okr) << 8) | f(x, okc, okr)];
+            auto const& [checker, pin] = CAP[(f(them, okr, okc) << 16) | (f(us, okr, okc) << 8) | f(x, okr, okc)];
             if (checker != 0) {
                if (pin == 0) {
                  uint8_t ci = oki + step * checker;
@@ -1111,6 +1162,8 @@ struct Position {
         check_and_pin_search(ne_scan, qb, -7);
         check_and_pin_search(sw_scan, qb,  7);
         check_and_pin_search(se_scan, qb,  9);
+
+        //std::cout << "check and pin search complete\n";
 
         // knight checks
         S = knightthreats(oki) & knight & them;
@@ -1598,7 +1651,7 @@ uint64_t checktest(Position & board, int depth) {
 
 int main(int argc, char * argv []) {
 
-    for (int d = 0; d < 2; ++ d) {
+    for (int d = 0; d < 5; ++ d) {
         auto P = Position(); // new chessboard
         std::cout << "\n----------\ndepth " << d << "\n";
         std::cout << "perft "; std::cout.flush();
