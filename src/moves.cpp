@@ -489,39 +489,35 @@ constexpr std::array<Bitboard, 64> KINGTHREATS = computekingthreats();
 std::vector<uint64_t> computeinterpositions() {
     // 64x64 table of bitboards expressing next allowed targets
     // if the goal is to interpose an attack from s to t.
-    // (note: capture of s is allowed, capture of t is not.)
     std::vector<uint64_t> result;
     for (uint8_t ti = 0; ti < 64; ++ ti) {
         uint8_t tc = ti & 7; uint8_t tr = ti >> 3;
+        uint64_t t = 1UL << ti;
         for (uint8_t si = 0; si < 64; ++ si) {
             uint8_t sc = si & 7; uint8_t sr = si >> 3;
             if (sc == tc) {
-                uint64_t F = 0x0101010101010101UL << sc;
                 if (sr < tr) {
-                    result.push_back((F >> (8*(8-tr))) & (F << (8*(sr))));
+                    result.push_back(t ^ (N_RAY[ti] & S_RAY[si]));
                 } else { // sr >= tr
-                    result.push_back((F >> (8*(7-sr))) & (F << (8*(tr+1))));
+                    result.push_back(t ^ (N_RAY[si] & S_RAY[ti]));
                 }
             } else if (sr == tr) {
-                uint64_t R = 0x00000000000000FFUL << (8*sr);
                 if (sc < tc) {
-                    result.push_back(R & (R >> (8-tc)) & (R << (sc)));
+                    result.push_back(t ^ (W_RAY[ti] & E_RAY[si]));
                 } else { // sr >= tr
-                    result.push_back(R & (R >> (7-sc)) & (R << (tc+1)));
+                    result.push_back(t ^ (W_RAY[si] & E_RAY[ti]));
                 }
             } else if (sr + sc == tr + tc) {
-                uint64_t A = (sr + sc < 7) ? (0x0102040810204080UL >> (8*(7-sr-sc))) : (0x0102040810204080UL << (8*(sr+sc-7)));
-                if (sr < tr) {
-                    result.push_back(A & (A << (7*(sr))) & (A >> (7*(8-tr))));
+                if (sc < tc) {
+                    result.push_back(t ^ (SW_RAY[ti] & NE_RAY[si]));
                 } else { // sr >= tr
-                    result.push_back(A & (A << (7*(tr+1))) & (A >> (7*(7-sr))));
+                    result.push_back(t ^ (SW_RAY[si] & NE_RAY[ti]));
                 }
             } else if (sr + tc == tr + sc) {
-                uint64_t D = (sr < sc) ? (0x8040201008040201UL >> (8*(sc-sr))) : (0x8040201008040201UL << (8*(sr-sc)));
                 if (sr < tr) {
-                    result.push_back(D & (D << (9*(sr))) & (D >> (9*(8-tr))));
-                } else {
-                    result.push_back(D & (D << (9*(tr+1))) & (D >> (9*(7-sr))));
+                    result.push_back(t ^ (SE_RAY[si] & NW_RAY[ti]));
+                } else { // sr >= tr
+                    result.push_back(t ^ (SE_RAY[ti] & NW_RAY[si]));
                 }
             } else {
                 result.push_back(-1);
@@ -640,7 +636,9 @@ struct Move {
     constexpr uint64_t ui() const {return (tc() << 3) | sr();}
     constexpr uint64_t u() const {return 1UL << ui();}
     constexpr uint8_t cr() const {return (wkcr() ? 0x01 : 0x00) | (wqcr() ? 0x02 : 0x00) | (bkcr() ? 0x04 : 0x00) | (bqcr() ? 0x08 : 0x00);}
-
+    constexpr bool is_ep() const {
+        return (sp() == PAWN) && (sc() != tc()) && (cp() == SPACE);
+    }
     // feasibility (optional? might need it for future tables)
     constexpr bool kcr() const {return wkcr() && bkcr();}
     constexpr bool qcr() const {return wkcr() && bkcr();}
@@ -1079,6 +1077,10 @@ struct Position {
         return check(ntz(king & (c() ? black : white)));
     }
 
+    bool mated() {
+        return (in_check() && legal_moves().size() == 0);
+    }
+
     std::vector<Move> legal_moves() { //uint16_t *out, uint8_t *moves_written) {
         // Step 1. Which player is active? (i.e. Whose turn?)
         // Take the perspective of the moving player, so
@@ -1140,7 +1142,9 @@ struct Position {
             if (checker != 0) {
                if (pin == 0) {
                  uint8_t ci = oki + step * checker;
+                 //std::cout << "oki = " << int(oki) << " ci = " << int(ci) << "\n";
                  targets &= INTERPOSITIONS[(oki << 6) | ci];
+                 //std::cout << Vizboard({INTERPOSITIONS[(oki << 6) | ci]}) << "\n";
                } else {
                  pinned |= 1UL << (oki + step * pin);
                }
@@ -1178,6 +1182,7 @@ struct Position {
         }
 
         if (targets == 0) { // king must move
+            std::cout << "No targets.\n";
             return moves;
         }
 
@@ -1575,22 +1580,18 @@ uint64_t perft(Position & board, uint8_t depth) {
     return result;
 }
 
-
-
-// TODO: implement Move::is_ep()
-
-// uint64_t capturetest(Position & board, int depth) {
-//   if (depth == 0) return 0;
-//   auto moves = board.legal_moves();
-//   uint64_t result = 0;
-//   for (auto move : moves) {
-//     board.play(move);
-//     if ((depth == 1) && (move.cp() != SPACE || move.is_ep())) result += 1;
-//     result += capturetest(board, depth-1);
-//     board.undo(move);
-//   }
-//   return result;
-// }
+uint64_t capturetest(Position & board, int depth) {
+  if (depth == 0) return 0;
+  auto moves = board.legal_moves();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    if ((depth == 1) && (move.cp() != SPACE || move.is_ep())) result += 1;
+    result += capturetest(board, depth-1);
+    board.undo(move);
+  }
+  return result;
+}
 
 // uint64_t enpassanttest(Position & board, int depth) {
 //   if (depth == 0) return 0;
@@ -1631,19 +1632,37 @@ uint64_t checktest(Position & board, int depth) {
 //   return result;
 // }
 
-// TODO: implement Position::mate
 
-// uint64_t matetest(Position & board, int depth) {
-//   if (depth == 0) return board.mate() ? 1 : 0;
-//   auto moves = board.legal_moves();
-//   uint64_t result = 0;
-//   for (auto move : moves) {
-//     board.play(move);
-//     result += matetest(board, depth-1);
-//     board.play(move);
-//   }
-//   return result;
-// }
+uint64_t matetest(Position & board, std::vector<Move> & prev, int depth) {
+  if (depth == 0) {
+      if (board.mated()) {
+          // for (auto move: prev) {
+          //     if (!move.pr() && (move.sp() != PAWN)) {
+          //         std::cout << GLYPHS[move.sp()];
+          //     }
+          //     std::cout << char('a' + move.sc()) << char('8' - move.sr()) << ((move.cp() == SPACE) ? "" : "x" ) << char('a' + move.tc()) << char('8' - move.tr());
+          //     if (move.pr()) {
+          //         std::cout << GLYPHS[move.sp()];
+          //     }
+          //     std::cout << " ";
+          // }
+          // std::cout << "\n";
+          return 1;
+      } else {
+          return 0;
+      }
+  }
+  auto moves = board.legal_moves();
+  uint64_t result = 0;
+  for (auto move : moves) {
+    board.play(move);
+    prev.push_back(move);
+    result += matetest(board, prev, depth-1);
+    prev.pop_back();
+    board.play(move);
+  }
+  return result;
+}
 
 int main(int argc, char * argv []) {
     // uint8_t sr = 4;
@@ -1663,6 +1682,11 @@ int main(int argc, char * argv []) {
         std::cout << perft(P, d) << "\n";
         std::cout << "checks "; std::cout.flush();
         std::cout << checktest(P, d) << "\n";
+        std::cout << "captures "; std::cout.flush();
+        std::cout << capturetest(P, d) << "\n";
+        std::cout << "mates "; std::cout.flush();
+        std::vector<Move> prev {};
+        std::cout << matetest(P, prev, d) << "\n";
     }
 
     // test
