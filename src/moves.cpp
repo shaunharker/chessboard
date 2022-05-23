@@ -66,7 +66,7 @@ std::ostream & operator << (std::ostream & stream, Vizboard x) {
   //stream << "as bitset: " << std::bitset<64>(x.x) << "\n";
   for (int row = 0; row < 8; ++ row) {
     for (int col = 0; col < 8; ++ col) {
-      stream << ((x.x & (1UL << (8*row+col))) ? "1" : "0");
+      stream << ((x.x & (1ULL << (8*row+col))) ? "1" : "0");
     }
     stream << "\n";
   }
@@ -96,14 +96,14 @@ constexpr uint8_t ntz(Bitboard x) {
 constexpr auto SquareBitboardRelation = enumerate(map(twopow, squares));
 
 // Special Bitboards
-constexpr Bitboard rank_8       = 0x00000000000000FFUL;
-constexpr Bitboard rank_6       = 0x0000000000FF0000UL;
-constexpr Bitboard rank_3       = 0x0000FF0000000000UL;
-constexpr Bitboard rank_1       = 0xFF00000000000000UL;
-constexpr Bitboard file_a       = 0x0101010101010101UL;
-constexpr Bitboard file_h       = 0x8080808080808080UL;
-constexpr Bitboard diagonal     = 0x8040201008040201UL;
-constexpr Bitboard antidiagonal = 0x0102040810204080UL;
+constexpr Bitboard rank_8       = 0x00000000000000FFULL;
+constexpr Bitboard rank_6       = 0x0000000000FF0000ULL;
+constexpr Bitboard rank_3       = 0x0000FF0000000000ULL;
+constexpr Bitboard rank_1       = 0xFF00000000000000ULL;
+constexpr Bitboard file_a       = 0x0101010101010101ULL;
+constexpr Bitboard file_h       = 0x8080808080808080ULL;
+constexpr Bitboard diagonal     = 0x8040201008040201ULL;
+constexpr Bitboard antidiagonal = 0x0102040810204080ULL;
 constexpr uint64_t SE_MASK = file_a * antidiagonal;
 constexpr uint64_t NW_MASK = (~SE_MASK) | antidiagonal;
 constexpr uint64_t SW_MASK = file_a * diagonal;
@@ -400,18 +400,18 @@ constexpr auto ROOKMASK = SliderMask(n, s, w, e);
 constexpr auto BISHOPMASK = SliderMask(nw, sw, ne, se);
 
 std::vector<Bitboard> computerookthreats(){
-  std::vector<Bitboard> result (1UL << 22);
+  std::vector<Bitboard> result (1ULL << 22);
   for (Square i = 0; i < 64; ++ i) {
-    Bitboard x = 1UL << i;
+    Bitboard x = 1ULL << i;
     auto const row = i >> 3;
     auto const col = i & 7;
     for (int k = 0x0000; k <= 0xFFFF; k += 0x0001) {
       Bitboard E = Bitboard(0);
       for (int d = 0; d < 8; ++d) {
-        E |= (k & (1 << d)) ? (1UL << (8*row + d)) : 0;
+        E |= (k & (1 << d)) ? (1ULL << (8*row + d)) : 0;
       }
       for (int d = 0; d < 8; ++d) {
-        E |= (k & (1 << (8+d))) ? (1UL << (8*d + col)) : 0;
+        E |= (k & (1 << (8+d))) ? (1ULL << (8*d + col)) : 0;
       }
       // E is empty squares intersected with rook "+"-mask possibility
       auto idx = rookcollisionfreehash(i, E);
@@ -440,12 +440,12 @@ std::vector<Bitboard> computebishopthreats() {
       for (int d = 0; d < 8; ++d) {
         Square r = row + col - d;
         if (r < 0 || r >= 8) continue;
-        E |= (k & (1 << d)) ? (1UL << (8*r + d)) : 0;
+        E |= (k & (1 << d)) ? (1ULL << (8*r + d)) : 0;
       }
       for (int d = 0; d < 8; ++d) {
         Square r = row - col + d;
         if (r < 0 || r >= 8) continue;
-        E |= (k & (1 << (8+d))) ? (1UL << (8*r + d)) : 0;
+        E |= (k & (1 << (8+d))) ? (1ULL << (8*r + d)) : 0;
       }
       // E is empty squares intersected with bishop "x"-mask possibility
       auto idx = bishopcollisionfreehash(i, E);
@@ -498,7 +498,7 @@ std::vector<uint64_t> computeinterpositions() {
     std::vector<uint64_t> result;
     for (uint8_t ti = 0; ti < 64; ++ ti) {
         uint8_t tc = ti & 7; uint8_t tr = ti >> 3;
-        uint64_t t = 1UL << ti;
+        uint64_t t = 1ULL << ti;
         for (uint8_t si = 0; si < 64; ++ si) {
             uint8_t sc = si & 7; uint8_t sr = si >> 3;
             if (sc == tc) {
@@ -636,11 +636,11 @@ struct Move {
     constexpr bool ep1() const {return (epc0_ep0_epc1_ep1 >> 0x04) & 0x08;}
 
     // queries
-    constexpr uint64_t s() const {return 1UL << si();}
-    constexpr uint64_t t() const {return 1UL << ti();}
+    constexpr uint64_t s() const {return 1ULL << si();}
+    constexpr uint64_t t() const {return 1ULL << ti();}
     constexpr uint64_t st() const {return s() | t();}
     constexpr uint64_t ui() const {return (tc() << 3) | sr();}
-    constexpr uint64_t u() const {return 1UL << ui();}
+    constexpr uint64_t u() const {return 1ULL << ui();}
     constexpr uint8_t cr() const {return (wkcr() ? 0x01 : 0x00) | (wqcr() ? 0x02 : 0x00) | (bkcr() ? 0x04 : 0x00) | (bqcr() ? 0x08 : 0x00);}
     constexpr bool is_ep() const {
         return (sp() == PAWN) && (sc() != tc()) && (cp() == SPACE);
@@ -1069,7 +1069,7 @@ struct Position {
     }
 
     void add_move_s_t(std::vector<Move> & moves, bool pr, Piece sp, uint8_t si, uint8_t ti) {
-        uint64_t t = 1UL << ti;
+        uint64_t t = 1ULL << ti;
         Piece cp;
 
         // debug
@@ -1193,7 +1193,7 @@ struct Position {
             return true;
         }
         // pawn threats
-        if (pawnthreats(1UL << si, color) & pawn & them) {
+        if (pawnthreats(1ULL << si, color) & pawn & them) {
             //std::cout << "Check Type 4\n";
             return true;
         }
@@ -1314,19 +1314,19 @@ struct Position {
 
     bool mated() {
         bool result = in_check() && (legal_moves().size() == 0);
-        if (!result && in_check()) {
-            std::cout << "This is recorded as a check but not a mate:\n";
-            print_tape();
-            std::cout << "The claimed allowed moves are:\n";
-            for (auto move : legal_moves()) {
-                std::cout << san_from_move(move) << " ";
-            }
-            std::cout << "\n";
-        }
+        // if (!result && in_check()) {
+        //     std::cout << "This is recorded as a check but not a mate:\n";
+        //     print_tape();
+        //     std::cout << "The claimed allowed moves are:\n";
+        //     for (auto move : legal_moves()) {
+        //         std::cout << san_from_move(move) << " ";
+        //     }
+        //     std::cout << "\n";
+        // }
         return result;
     }
 
-    std::vector<Move> legal_moves() { //uint16_t *out, uint8_t *moves_written) {
+    std::vector<Move> legal_moves(bool debug=false) { //uint16_t *out, uint8_t *moves_written) {
         // Step 1. Which player is active? (i.e. Whose turn?)
         // Take the perspective of the moving player, so
         // it becomes 'us' vs 'them'.
@@ -1388,12 +1388,14 @@ struct Position {
             if (checker != 0) {
                if (pin == 0) {
                  uint8_t ci = oki + step * checker;
-                 //std::cout << "caps interposition oki = " << int(oki) << " ci = " << int(ci) << "\n";
+                 //std::cout << "--begin check_and_pin_search--\n";
+                 //std::cout << "caps interposition oki = " << int(oki) << " ci = " << int(ci) << " with step " << int(step) << " and checker = " << square(ci) << "\n";
                  targets &= INTERPOSITIONS[(oki << 6) | ci];
-                 // std::cout << Vizboard({INTERPOSITIONS[(oki << 6) | ci]}) << "\n";
-                 // std::cout << Vizboard({targets}) << "\n";
+                 //std::cout << Vizboard({INTERPOSITIONS[(oki << 6) | ci]}) << "\n";
+                 //std::cout << Vizboard({targets}) << "\n";
+                 //std::cout << "--end check_and_pin_search--\n";
                } else {
-                 pinned |= 1UL << (oki + step * pin);
+                 pinned |= 1ULL << (oki + step * pin);
                }
             }
         };
@@ -1421,7 +1423,7 @@ struct Position {
         while (S) {
           uint8_t si = ntz(S);
           S &= S - 1;
-          targets &= (1UL << si);
+          targets &= (1ULL << si);
         }
 
         // pawn checks
@@ -1429,7 +1431,10 @@ struct Position {
         while (S) {
           uint8_t si = ntz(S);
           S &= S - 1;
-          targets &= (1UL << si);
+          targets &= (1ULL << si);
+          // if (ep()) {
+          //     targets |= (1ULL << epi());
+          // }
         }
 
         if (targets == 0) { // king must move
@@ -1440,9 +1445,9 @@ struct Position {
         if (targets == -1) { // no checks
             // Kingside Castle
             if (c() ? bkcr() : wkcr()) {
-                Bitboard conf = (c() ? 240UL : (240UL << 56));
-                if (((us & conf) == (c() ? 144UL : (144UL << 56))) &&
-                    ((empty & conf) == (c() ? 96UL : (96UL << 56))) &&
+                Bitboard conf = (c() ? 240ULL : (240ULL << 56));
+                if (((us & conf) == (c() ? 144ULL : (144ULL << 56))) &&
+                    ((empty & conf) == (c() ? 96ULL : (96ULL << 56))) &&
                     !check(oki+1, c()) && !check(oki+2, c())) {
                     // std::cout << "kingside castle move\n";
                     add_move_s_t(moves, false, KING, oki, oki + 2);
@@ -1451,9 +1456,9 @@ struct Position {
 
             // Queenside Castle
             if (c() ? bqcr() : wqcr()) {
-                Bitboard conf = (c() ? 31UL : (31UL << 56));
-                if (((us & conf) == (c() ? 17UL : (17UL << 56))) &&
-                    ((empty & conf) == (c() ? 14UL : (14UL << 56))) &&
+                Bitboard conf = (c() ? 31ULL : (31ULL << 56));
+                if (((us & conf) == (c() ? 17ULL : (17ULL << 56))) &&
+                    ((empty & conf) == (c() ? 14ULL : (14ULL << 56))) &&
                     !check(oki-1, c()) && !check(oki-2, c())) {
                     // std::cout << "queenside castle move\n";
                     add_move_s_t(moves, false, KING, oki, oki + 2);
@@ -1466,35 +1471,35 @@ struct Position {
         while (S) {
             auto si = ntz(S);
             S &= S-1;
-            if ((1UL << si) & pinned) {
+            if ((1ULL << si) & pinned) {
                 uint8_t sc = si & 7;
                 uint8_t sr = si >> 3;
                 if (sc == okc) {
                     Bitboard F = file_a << sc;
-                    uint64_t T = F & rookthreats(si, empty) & ~us;
+                    uint64_t T = F & rookthreats(si, empty) & targets;
                     // if (T) std::cout << "file-pinned queen moves\n";
                     add_move_s_T(moves, false, QUEEN, si, T);
                 } else if (sr == okr) {
                     Bitboard R = rank_8 << (8*sr);
-                    uint64_t T = R & rookthreats(si, empty) & ~us;
+                    uint64_t T = R & rookthreats(si, empty) & targets;
                     // if (T) std::cout << "rank-pinned queen moves\n";
                     add_move_s_T(moves, false, QUEEN, si, T);
                 } else if ((sr + sc) == (okr + okc)) {
                     Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
-                    uint64_t T = A & bishopthreats(si, empty) & ~us;
+                    uint64_t T = A & bishopthreats(si, empty) & targets;
                     // if (T) std::cout << "antidiagonally-pinned queen moves\n";
                     add_move_s_T(moves, false, QUEEN, si, T);
                 } else { // sr - sc == okr - okc
                     Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
-                    uint64_t T = D & bishopthreats(si, empty) & ~us;
+                    uint64_t T = D & bishopthreats(si, empty) & targets;
                     // if (T) std::cout << "diagonally-pinned queen moves\n";
                     add_move_s_T(moves, false, QUEEN, si, T);
                 }
             } else {
-                uint64_t TR = rookthreats(si, empty) & ~us;
+                uint64_t TR = rookthreats(si, empty) & targets;
                 // if (TR) std::cout << "unpinned queen rook-like move\n";
                 add_move_s_T(moves, false, QUEEN, si, TR);
-                uint64_t TB = bishopthreats(si, empty) & ~us;
+                uint64_t TB = bishopthreats(si, empty) & targets;
                 // if (TB) std::cout << "unpinned queen bishop-like move\n";
                 add_move_s_T(moves, false, QUEEN, si, TB);
             }
@@ -1505,22 +1510,22 @@ struct Position {
         while (S) {
             auto si = ntz(S);
             S &= S-1;
-            if ((1UL << si) & pinned) {
+            if ((1ULL << si) & pinned) {
                 uint8_t sc = si & 7;
                 uint8_t sr = si >> 3;
                 if (sc == okc) {
                     Bitboard F = file_a << okc;
-                    uint64_t T = F & rookthreats(si, empty) & ~us;
+                    uint64_t T = F & rookthreats(si, empty) & targets;
                     // if (T) std::cout << "file-pinned rook moves\n";
                     add_move_s_T(moves, false, ROOK, si, T);
                 } else { // sr == okr
                     Bitboard R = rank_8 << (8*okr);
-                    uint64_t T = R & rookthreats(si, empty) & ~us;
+                    uint64_t T = R & rookthreats(si, empty) & targets;
                     // if (T) std::cout << "rank-pinned rook moves\n";
                     add_move_s_T(moves, false, ROOK, si, T);
                 }
             } else {
-                uint64_t T = rookthreats(si, empty) & ~us;
+                uint64_t T = rookthreats(si, empty) & targets;
                 // if (T) std::cout << "unpinned rook moves\n";
                 add_move_s_T(moves, false, ROOK, si, T);
             }
@@ -1531,7 +1536,7 @@ struct Position {
         while (S) {
             auto si = ntz(S);
             S &= S-1;
-            if ((1UL << si) & pinned) {
+            if ((1ULL << si) & pinned) {
                 uint8_t sc = si & 7;
                 uint8_t sr = si >> 3;
                 if (sc + sr == okr + okc) {
@@ -1546,7 +1551,7 @@ struct Position {
                     add_move_s_T(moves, false, BISHOP, si, T);
                 }
             } else {
-                uint64_t T = bishopthreats(si, empty) & ~us;
+                uint64_t T = bishopthreats(si, empty) & targets;
                 // if (T) std::cout << "unpinned bishop moves\n";
                 add_move_s_T(moves, false, BISHOP, si, T);
             }
@@ -1568,11 +1573,12 @@ struct Position {
         while (S) {
             auto si = ntz(S);
             S &= S-1;
-            Bitboard s = 1UL << si;
+            Bitboard s = 1ULL << si;
             uint8_t sc = si & 0x07;
             uint8_t ti = si + (c() ? 8 : -8);
             uint8_t tr = ti >> 3;
             if (((s & pinned) != 0) && (sc != okc)) continue;
+            if ((targets & (1ULL << ti)) == 0) continue;
             if (tr == 0 || tr == 7) {
                 // std::cout << "pawn push promotion moves\n";
                 add_move_s_t(moves, true, QUEEN, si, ti);
@@ -1591,12 +1597,13 @@ struct Position {
         while (T) {
           auto ti = ntz(T);
           T &= T-1;
-          Bitboard t = 1UL << ti;
+          Bitboard t = 1ULL << ti;
+          if ((targets & t) == 0) continue;
           S = pawnthreats(t, !c()) & our_pawns;
           while (S) {
             auto si = ntz(S);
             S &= S-1;
-            Bitboard s = 1UL << si;
+            Bitboard s = 1ULL << si;
             if (s & pinned) {
                 uint8_t sc = si & 0x07;
                 uint8_t sr = si >> 3;
@@ -1609,7 +1616,7 @@ struct Position {
                     if ((sr + sc) == (tr + tc)) continue;
                 }
             }
-            if ((1UL << ti) & (rank_1 | rank_8)) {
+            if ((1ULL << ti) & (rank_1 | rank_8)) {
                 // std::cout << "pawn capture promotion moves\n";
                 add_move_s_t(moves, true, QUEEN, si, ti);
                 add_move_s_t(moves, true, ROOK, si, ti);
@@ -1623,15 +1630,17 @@ struct Position {
         }
 
         // Double Pawn pushes
-        S = our_pawns & (c() ? 0x000000000000FF00UL :
-                                 0x00FF000000000000UL);
+        S = our_pawns & (c() ? 0x000000000000FF00ULL :
+                                 0x00FF000000000000ULL);
         T = empty & (c() ? ((S << 16) & (empty << 8))
                            : ((S >> 16) & (empty >> 8)));
         while (T) {
             uint8_t ti = ntz(T);
             T &= T-1;
+            uint64_t t = (1ULL << ti);
+            if ((targets & t) == 0) continue;
             uint8_t si = ti - (c() ? 16 : -16);
-            Bitboard s = 1UL << si;
+            Bitboard s = 1ULL << si;
             if (((s & pinned) != 0) && ((si & 0x07) != okc)) continue;
             // std::cout << "double pawn push move " << int(si) << " " << int(ti) << " " << okc << " " << pinned << "\n";
             add_move_s_t(moves, false, PAWN, si, ti);
@@ -1640,9 +1649,14 @@ struct Position {
         // A discovered check cannot be countered with
         // an en passant capture. ~The More You Know~
 
+        // bug: what if we need en passant to get out of check?
+        //      this can happen only if the double push pawn
+        //      is the one giving check. A double push is
+        //      never a double check.
+
         // En Passant
         if (ep()) {
-            S = pawnthreats(1UL << epi(), !c()) & our_pawns;
+            S = pawnthreats(1ULL << epi(), !c()) & our_pawns;
             while (S) {
                 auto si = ntz(S);
                 S &= S-1;
@@ -1666,7 +1680,7 @@ struct Position {
                     while (R) {
                         auto ri = ntz(R);
                         R &= R-1;
-                        uint64_t r = 1UL << ri;
+                        uint64_t r = 1ULL << ri;
                         // Notice that
                         //   bool expr = ((a < b) && (b <= c)) ||
                         //               ((c < b) && (b <= a));
@@ -1935,7 +1949,7 @@ int main(int argc, char * argv []) {
     // std::cout << Vizboard({SW_RAY[(sr << 3) | sc]}) << "\n";
     // std::cout << Vizboard({ S_RAY[(sr << 3) | sc]}) << "\n";
     // std::cout << Vizboard({SE_RAY[(sr << 3) | sc]}) << "\n";
-    for (int d = 0; d < 5; ++ d) {
+    for (int d = 0; d < 6; ++ d) {
         auto P = Position(); // new chessboard
         std::cout << "\n----------\ndepth " << d << "\n";
         std::cout << "perft "; std::cout.flush();
