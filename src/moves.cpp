@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <utility>
+#include <sstream>
 
 // non-lazy constexpr versions of range, map, and enumerate
 template <uint64_t N> constexpr auto range() {
@@ -51,8 +52,12 @@ constexpr auto squares = range<64>();
 // the least significant bit corresponds to the integer 0,
 // and so on.
 typedef uint64_t Bitboard;
+typedef uint8_t Square;
 
-typedef int Square;
+constexpr std::string_view square(Square s) {
+  char cstr[3] {(char)('a' + (s & 0x07)), (char)('8' - (s >> 3)), 0};
+  return std::string_view(cstr);
+}
 
 // debugging tool: type wrapper for cout
 struct Vizboard {Bitboard x;};
@@ -489,6 +494,7 @@ constexpr std::array<Bitboard, 64> KINGTHREATS = computekingthreats();
 std::vector<uint64_t> computeinterpositions() {
     // 64x64 table of bitboards expressing next allowed targets
     // if the goal is to interpose an attack from s to t.
+    // (i.e. intersect rays and exclude square t but not square s)
     std::vector<uint64_t> result;
     for (uint8_t ti = 0; ti < 64; ++ ti) {
         uint8_t tc = ti & 7; uint8_t tr = ti >> 3;
@@ -821,7 +827,10 @@ struct Position {
     bool ep_; // true if last move was double push
     bool c_; // false when white to move, true when black to move
 
-    Position() {
+    // DEBUG
+    std::vector<Move> tape;
+
+    Position() : tape() {
         white = 0xFFFF000000000000; // rank_1 | rank_2;
         black = 0x000000000000FFFF; // rank_7 | rank_8;
         king = 0x1000000000000010; // e1 | e8;
@@ -867,6 +876,13 @@ struct Position {
         auto sp = move.sp();
         auto cp = move.cp();
         auto color = move.c();
+
+        // DEBUG
+        if (color == c()) {
+            tape.push_back(move);
+        } else {
+            tape.pop_back();
+        }
 
         uint64_t s = move.s();
         uint64_t t = move.t();
@@ -934,13 +950,136 @@ struct Position {
         }
     }
 
+    void play(std::string s) {
+        Move m;
+
+    }
     void undo(Move const& move) {
         play(move); // undoes itself
+    }
+
+    std::string board() const {
+      // display board
+      uint64_t s = 1;
+      std::ostringstream ss;
+      for (int i=0; i<8; ++i) {
+        for (int j=0; j<8; ++j) {
+          if (s & white) {
+            if (s & king) {
+              ss << "K";
+            } else if (s & queen) {
+              ss << "Q";
+            } else if (s & bishop) {
+              ss << "B";
+            } else if (s & knight) {
+              ss << "N";
+            } else if (s & rook) {
+              ss << "R";
+            } else if (s & pawn) {
+              ss << "P";
+            } else {
+              ss << "?"; // debug
+            }
+          } else if (s & black) {
+            if (s & king) {
+              ss << "k";
+            } else if (s & queen) {
+              ss << "q";
+            } else if (s & bishop) {
+              ss << "b";
+            } else if (s & knight) {
+              ss << "n";
+            } else if (s & rook) {
+              ss << "r";
+            } else if (s & pawn) {
+              ss << "p";
+            }
+          } else {
+            ss << ".";
+          }
+          s <<= 1;
+        }
+        ss << "\n";
+      }
+      return ss.str();
+    }
+
+    std::string fen() const {
+      // display board
+      uint64_t s = 1;
+      std::ostringstream ss;
+      // the board string,
+      // e.g. rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR
+      char b='0', cc='1';
+      for (int i=0; i<8; ++i) {
+        if (i > 0) ss << "/";
+        for (int j=0; j<8; ++j) {
+          if (s & white) {
+            if (s & king) {
+              cc = 'K';
+            } else if (s & queen) {
+              cc = 'Q';
+            } else if (s & bishop) {
+              cc = 'B';
+            } else if (s & knight) {
+              cc = 'N';
+            } else if (s & rook) {
+              cc = 'R';
+            } else if (s & pawn) {
+              cc = 'P';
+            }
+          } else
+          if (s & black) {
+            if (s & king) {
+              cc = 'k';
+            } else if (s & queen) {
+              cc = 'q';
+            } else if (s & bishop) {
+              cc = 'b';
+            } else if (s & knight) {
+              cc = 'n';
+            } else if (s & rook) {
+              cc = 'r';
+            } else if (s & pawn) {
+              cc = 'p';
+            }
+          }
+          if (cc == '1') {
+            ++b;
+          } else {
+            (b > '0') ? (ss << b << cc) : (ss << cc);
+            b = '0';
+            cc = '1';
+          }
+          s <<= 1;
+        }
+        if (b > '0') {
+          ss << b;
+          b = '0';
+        }
+      }
+      ss << " " << (c() ? "b " : "w ");
+      if (wkcr()) ss << "K";
+      if (wqcr()) ss << "Q";
+      if (bkcr()) ss << "k";
+      if (bqcr()) ss << "q";
+      ep() ? (ss << " " << square(epi()) << " ") : (ss << " - ");
+      //ss << halfmove << " " << fullmove; { HOLE }
+      return ss.str();
     }
 
     void add_move_s_t(std::vector<Move> & moves, bool pr, Piece sp, uint8_t si, uint8_t ti) {
         uint64_t t = 1UL << ti;
         Piece cp;
+
+        // debug
+        bool color = c();
+        Bitboard const& us = c() ? black : white;
+        Bitboard const& them = c() ? white : black;
+        //uint64_t ok = us & king;
+        //uint8_t oki = ntz(ok);
+
+        // cont
         if (pawn & t) {
             cp = PAWN;
         } else if (knight & t) {
@@ -964,8 +1103,8 @@ struct Position {
         bool wkcr1 = wkcr() && ((si == 60) || (ti == 62) || (si == 63));
         bool ep1 = (sp == PAWN) && ((si == ti + 16) || (ti == si + 16));
         uint8_t epc1 = ep1 ? tc : 0;
-
-        moves.push_back(Move(tc, tr, bqcr1, bkcr1, sc, sr, wqcr1, wkcr1, cp, sp, pr, c(), epc(), ep(), epc1, ep1));
+        auto move = Move(tc, tr, bqcr1, bkcr1, sc, sr, wqcr1, wkcr1, cp, sp, pr, c(), epc(), ep(), epc1, ep1);
+        moves.push_back(move);
     }
 
     void add_move_s_T(std::vector<Move> & moves, bool pr, Piece sp, uint8_t si, Bitboard T) {
@@ -976,10 +1115,10 @@ struct Position {
         }
     }
 
-    bool check(uint8_t si) {
+    bool check(uint8_t si, bool color) {
         // determine if si is attacked by "them" as the board stands
-        Bitboard const& us = c() ? black : white;
-        Bitboard const& them = c() ? white : black;
+        Bitboard const& us = color ? black : white;
+        Bitboard const& them = color ? white : black;
 
         Bitboard qr = (queen | rook) & them;
         Bitboard qb = (queen | bishop) & them;
@@ -1032,24 +1171,14 @@ struct Position {
             //std::cout << "[qb]";
             if (checker != 0 && pin == 0) {
                 // std::cout << "Check Type 2\n";
+                // print_tape();
                 // std::cout << "\n-us->\n";
                 // std::cout << Vizboard({us}) << "\n";
                 // std::cout << "-them->\n";
                 // std::cout << Vizboard({them}) << "\n";
-                // std::cout << "\n-qb->\n";
+                // std::cout << "\n-bishop-like-attackers->\n";
                 // std::cout << Vizboard({qb}) << "\n";
-                // std::cout << "\n-se->\n";
-                // std::cout << Vizboard({SE_RAY[(sr << 3) | sc]}) << "\n";
                 // std::cout << "\n Origin square = " << int(si) << "\n\n";
-                // uint64_t x = us;
-                // std::cout << Vizboard({x}) << " ^ *\n";
-                // x &= SE_RAY[(sr << 3) | sc];
-                // std::cout << Vizboard({x}) << " ^ & SE_RAY\n";
-                // x >>= 8 * sr + sc;
-                // std::cout << Vizboard({x}) << " ^ >>= 8 * sr + sc\n";
-                // x = (file_a * x) >> 56;
-                // std::cout << Vizboard({x}) << " = (file_a * x) >> 56\n";
-                // std::cout << "c.f. " << int(f(us, sc, sr)) << "\n";
                 // std::cout << "address " << std::bitset<24>(address) << "\n";
                 // std::cout << "sliders " << std::bitset<8>(f(qb, sr, sc)) << "\n";
                 // std::cout << "us " << std::bitset<8>(f(us, sr, sc))  << "\n";
@@ -1064,7 +1193,7 @@ struct Position {
             return true;
         }
         // pawn threats
-        if (pawnthreats(1UL << si, c()) & pawn & them) {
+        if (pawnthreats(1UL << si, color) & pawn & them) {
             //std::cout << "Check Type 4\n";
             return true;
         }
@@ -1074,11 +1203,127 @@ struct Position {
     }
 
     bool in_check() {
-        return check(ntz(king & (c() ? black : white)));
+        return check(ntz(king & (c() ? black : white)), c());
+    }
+
+    std::string san_from_move(Move const& move) {
+        uint64_t empty = ~(white | black);
+        std::ostringstream ss;
+        auto disambiguate = [&](uint64_t S) {
+            if (popcount(S) < 2) return;
+            if (popcount(S & (file_a << move.sc())) == 1) {
+                ss << 'a' + move.sc();
+                return;
+            }
+            if (popcount(S & (rank_8 << move.sr())) == 1) {
+                ss << '8' - move.sr();
+                return;
+            }
+            ss << ('a' + move.sc()) << ('8' - move.sr());
+        };
+        if (move.pr() || (move.sp() == PAWN)) {
+            if (move.sc() != move.tc()) {
+                ss << ('a' + move.sc()) << "x";
+            }
+            ss << square(move.ti());
+            if (move.pr()) {
+                ss << "=" << GLYPHS[move.sp()];
+            }
+        } else if (move.sp() == KING) {
+            if (move.sc() == 4) {
+                if (move.tc() == 6) {
+                    ss << "O-O";
+                } else if (move.tc() == 2) {
+                    ss << "O-O-O";
+                } else {
+                    ss << "K" << square(move.ti());
+                }
+            } else {
+                ss << "K" << square(move.ti());
+            }
+        } else {
+            switch (move.sp()) {
+                case KNIGHT:
+                    ss << "N";
+                    disambiguate(knightthreats(move.ti()) & knight & (move.c() ? black : white));
+                    break;
+                case BISHOP:
+                    ss << "B";
+                    disambiguate(bishopthreats(move.ti(), empty) & bishop & (move.c() ? black : white));
+                    break;
+                case ROOK:
+                    ss << "R";
+                    disambiguate(rookthreats(move.ti(), empty) & rook & (move.c() ? black : white));
+                    break;
+                case QUEEN:
+                    ss << "Q";
+                    disambiguate(queenthreats(move.ti(), empty) & queen & (move.c() ? black : white));
+                    break;
+            }
+            if (move.cp() != SPACE) ss << "x";
+            ss << square(move.ti());
+        }
+        // is the move a check? (note: don't forget discovered checks!)
+        play(move);
+        if (in_check()) {
+            if (legal_moves().size() == 0) {
+                ss << "#";
+            } else {
+                ss << "+";
+            }
+        }
+        undo(move);
+        return ss.str();
+    }
+
+    Move move_from_san(std::string const& san) {
+        std::vector<Move> moves = legal_moves();
+        for (Move move : moves) {
+            if (san_from_move(move) == san) {
+                return move;
+            }
+        }
+        throw std::runtime_error("illegal move");
+        // char c = san[0];
+        // uint8_t sp, si, ti
+        // switch (c) {
+        //     case 'K':
+        //
+        //         break;
+        //     case 'Q':
+        //         break;
+        //     case 'R':
+        //         break;
+        //     case 'B':
+        //         break;
+        //     case 'N':
+        //         break;
+        //     default:
+        // }
+    }
+
+    void print_tape() {
+        for (auto move : tape) {
+            if(!move.pr() && (move.sp() != PAWN)) std::cout << GLYPHS[move.sp()];
+            std::cout << char('a' + move.sc()) << char('8' - move.sr()) << ((move.cp() == SPACE) ? "" : "x") << char('a' + move.tc()) << char('8' - move.tr());
+            if(move.pr()) std::cout << "=" << GLYPHS[move.sp()];
+            std::cout << " ";
+        }
+        std::cout << "\n";
     }
 
     bool mated() {
-        return (in_check() && legal_moves().size() == 0);
+        bool result = in_check() && (legal_moves().size() == 0);
+        if (!result && in_check()) {
+            std::cout << "This is recorded as a check but not a mate:\n";
+            print_tape();
+            std::cout << "The claimed allowed moves are:\n";
+            for (auto move : legal_moves()) {
+                std::cout << san_from_move(move) << " ";
+            }
+            std::cout << "\n";
+        }
+        return result;
     }
 
     std::vector<Move> legal_moves() { //uint16_t *out, uint8_t *moves_written) {
@@ -1107,7 +1352,8 @@ struct Position {
         while (T) {
             uint8_t ti = ntz(T);
             T &= (T-1);
-            if (!check(ti)) {
+
+            if (!check(ti, c())) {
                 // std::cout << "king move\n";
                 add_move_s_t(moves, false, KING, oki, ti);
             }
@@ -1142,9 +1388,10 @@ struct Position {
             if (checker != 0) {
                if (pin == 0) {
                  uint8_t ci = oki + step * checker;
-                 //std::cout << "oki = " << int(oki) << " ci = " << int(ci) << "\n";
+                 //std::cout << "caps interposition oki = " << int(oki) << " ci = " << int(ci) << "\n";
                  targets &= INTERPOSITIONS[(oki << 6) | ci];
-                 //std::cout << Vizboard({INTERPOSITIONS[(oki << 6) | ci]}) << "\n";
+                 // std::cout << Vizboard({INTERPOSITIONS[(oki << 6) | ci]}) << "\n";
+                 // std::cout << Vizboard({targets}) << "\n";
                } else {
                  pinned |= 1UL << (oki + step * pin);
                }
@@ -1165,8 +1412,12 @@ struct Position {
 
         //std::cout << "check and pin search complete\n";
 
+        // todo: exploit the fact one can't be
+        // checked by two non-sliders simultaneously
+
         // knight checks
         S = knightthreats(oki) & knight & them;
+
         while (S) {
           uint8_t si = ntz(S);
           S &= S - 1;
@@ -1192,7 +1443,7 @@ struct Position {
                 Bitboard conf = (c() ? 240UL : (240UL << 56));
                 if (((us & conf) == (c() ? 144UL : (144UL << 56))) &&
                     ((empty & conf) == (c() ? 96UL : (96UL << 56))) &&
-                    !check(oki+1) && !check(oki+2)) {
+                    !check(oki+1, c()) && !check(oki+2, c())) {
                     // std::cout << "kingside castle move\n";
                     add_move_s_t(moves, false, KING, oki, oki + 2);
                 }
@@ -1203,7 +1454,7 @@ struct Position {
                 Bitboard conf = (c() ? 31UL : (31UL << 56));
                 if (((us & conf) == (c() ? 17UL : (17UL << 56))) &&
                     ((empty & conf) == (c() ? 14UL : (14UL << 56))) &&
-                    !check(oki-1) && !check(oki-2)) {
+                    !check(oki-1, c()) && !check(oki-2, c())) {
                     // std::cout << "queenside castle move\n";
                     add_move_s_t(moves, false, KING, oki, oki + 2);
                 }
@@ -1634,39 +1885,48 @@ uint64_t checktest(Position & board, int depth) {
 
 
 uint64_t matetest(Position & board, std::vector<Move> & prev, int depth) {
-  if (depth == 0) {
-      if (board.mated()) {
-          // for (auto move: prev) {
-          //     if (!move.pr() && (move.sp() != PAWN)) {
-          //         std::cout << GLYPHS[move.sp()];
-          //     }
-          //     std::cout << char('a' + move.sc()) << char('8' - move.sr()) << ((move.cp() == SPACE) ? "" : "x" ) << char('a' + move.tc()) << char('8' - move.tr());
-          //     if (move.pr()) {
-          //         std::cout << GLYPHS[move.sp()];
-          //     }
-          //     std::cout << " ";
-          // }
-          // std::cout << "\n";
-          return 1;
-      } else {
-          return 0;
-      }
-  }
-  auto moves = board.legal_moves();
-  uint64_t result = 0;
-  for (auto move : moves) {
+    //if (depth == 0) return 0;
+    if (depth == 0) {
+        if (board.mated()) {
+            // for (auto move: prev) {
+            //     if (!move.pr() && (move.sp() != PAWN)) {
+            //         std::cout << GLYPHS[move.sp()];
+            //     }
+            //     std::cout << char('a' + move.sc()) << char('8' - move.sr()) << ((move.cp() == SPACE) ? "" : "x" ) << char('a' + move.tc()) << char('8' - move.tr());
+            //     if (move.pr()) {
+            //         std::cout << GLYPHS[move.sp()];
+            //     }
+            //     std::cout << " ";
+            // }
+            // std::cout << "\n";
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+    auto moves = board.legal_moves();
+    uint64_t result = 0;
+    for (auto move : moves) {
     board.play(move);
     prev.push_back(move);
     result += matetest(board, prev, depth-1);
     prev.pop_back();
     board.play(move);
-  }
-  return result;
+    }
+    return result;
 }
 
 int main(int argc, char * argv []) {
-    // uint8_t sr = 4;
-    // uint8_t sc = 4;
+
+    //std::cout << Vizboard({INTERPOSITIONS[(46 << 6) | 30]}) << "\n"; // correct
+    // std::cout << Vizboard({INTERPOSITIONS[(30 << 6) | 27]}) << "\n";
+    // std::cout << Vizboard({INTERPOSITIONS[(45 << 6) | 27]}) << "\n";
+    // std::cout << Vizboard({INTERPOSITIONS[(ti << 6) | si]}) << "\n";
+    // std::cout << Vizboard({INTERPOSITIONS[(ti << 6) | si]}) << "\n";
+    // std::cout << Vizboard({INTERPOSITIONS[(ti << 6) | si]}) << "\n";
+    // std::cout << Vizboard({INTERPOSITIONS[(ti << 6) | si]}) << "\n";
+    // std::cout << Vizboard({INTERPOSITIONS[(ti << 6) | si]}) << "\n";
+
     // std::cout << Vizboard({NW_RAY[(sr << 3) | sc]}) << "\n";
     // std::cout << Vizboard({ N_RAY[(sr << 3) | sc]}) << "\n";
     // std::cout << Vizboard({NE_RAY[(sr << 3) | sc]}) << "\n";
