@@ -246,7 +246,8 @@ Bitboard bishopcollisionfreehash(Square i, Bitboard const& E) {
 }
 
 uint8_t bitreverse8(uint8_t x) {
-  return __builtin_bitreverse8(x);
+  return (x * 0x0202020202ULL & 0x010884422010ULL) % 1023;
+  // return __builtin_bitreverse8(x);
 }
 
 // constexpr Bitboard off_diagonal(uint8_t row, uint8_t col) {
@@ -735,6 +736,42 @@ struct Move {
     constexpr uint8_t epc1() const {return (epc0_ep0_epc1_ep1 >> 0x04) & 0x07;}
     constexpr bool ep1() const {return (epc0_ep0_epc1_ep1 >> 0x04) & 0x08;}
 
+    std::string repr() const {
+        std::ostringstream ss;
+        if (pr() || (sp() == PAWN)) {
+            if (sc() != tc()) {
+                ss << char('a' + sc()) << "x";
+            }
+            ss << square(ti());
+            if (pr()) {
+                ss << "=" << GLYPHS[sp()];
+            }
+        } else if (sp() == KING) {
+            if (sc() == 4) {
+                if (tc() == 6) {
+                    ss << "O-O";
+                } else if (tc() == 2) {
+                    ss << "O-O-O";
+                } else {
+                    ss << "K" << square(ti());
+                }
+            } else {
+                ss << "K" << square(ti());
+            }
+        } else {
+            switch (sp()) {
+                case KNIGHT: ss << "N"; break;
+                case BISHOP: ss << "B"; break;
+                case ROOK: ss << "R"; break;
+                case QUEEN: ss << "Q"; break;
+            }
+            ss << square(si());
+            if (cp() != SPACE) ss << "x";
+            ss << square(ti());
+        }
+        return ss.str();
+    }
+
     // queries
     constexpr uint64_t s() const {return 1ULL << si();}
     constexpr uint64_t t() const {return 1ULL << ti();}
@@ -968,7 +1005,7 @@ struct Position {
     constexpr bool bqcr() const { return cr & 8; }
     constexpr uint8_t epc() const { return epc_; }
     constexpr bool ep() const { return ep_; }
-    constexpr uint8_t epi() const { return epc_ | (c() ? 0x30 : 0x10); }
+    constexpr uint8_t epi() const { return epc_ | (c() ? 0x28 : 0x10); }
     constexpr bool c() const { return c_; }
 
     // void play(Position rhs) {
@@ -1408,7 +1445,7 @@ struct Position {
         return result;
     }
 
-    std::string san_from_move(Move const& move) {
+    std::string move_to_san(Move const& move) {
         uint64_t empty = ~(white | black);
         std::ostringstream ss;
         auto disambiguate = [&](uint64_t S) {
@@ -1478,10 +1515,10 @@ struct Position {
         return ss.str();
     }
 
-    Move move_from_san(std::string const& san) {
+    Move san_to_move(std::string const& san) {
         std::vector<Move> moves = legal_moves();
         for (Move move : moves) {
-            if (san_from_move(move) == san) {
+            if (move_to_san(move) == san) {
                 return move;
             }
         }
@@ -1663,19 +1700,15 @@ struct Position {
             if (checker != 0) {
                if (pin == 0) {
                  uint8_t ci = oki + step * checker;
-                 //std::cout << "--begin check_and_pin_search--\n";
-                 //std::cout << "caps interposition oki = " << int(oki) << " ci = " << int(ci) << " with step " << int(step) << " and checker = " << square(ci) << "\n";
-                 if (((oki << 6) | ci) > INTERPOSITIONS.size()) {
+                 uint64_t address = (uint64_t(oki) << 6) | uint64_t(ci);
+                 if (address > INTERPOSITIONS.size()) {
                      std::cout << "INTERPOSITION whoopsie\n";
                      std::cout << "oki = " << int(oki) << "\n";
                      std::cout << "ci = " << int(ci) << "\n";
                      std::cout.flush();
                      abort();
                  }
-                 targets &= INTERPOSITIONS[(oki << 6) | ci];
-                 //std::cout << Vizboard({INTERPOSITIONS[(oki << 6) | ci]}) << "\n";
-                 //std::cout << Vizboard({targets}) << "\n";
-                 //std::cout << "--end check_and_pin_search--\n";
+                 targets &= INTERPOSITIONS[address];
                } else {
                  pinned |= 1ULL << (oki + step * pin);
                }
@@ -1724,7 +1757,7 @@ struct Position {
             return moves;
         }
 
-        if (targets == -1) { // no checks
+        if (targets == uint64_t(-1)) { // no checks
             // Kingside Castle
             if (c() ? bkcr() : wkcr()) {
 
@@ -1826,7 +1859,7 @@ struct Position {
             S &= S-1;
             if ((1ULL << si) & pinned) {
                 uint8_t sc = si & 7;
-                uint8_t sr = si >> 3;
+                // uint8_t sr = si >> 3;
                 if (sc == okc) {
                     Bitboard F = file_a << okc;
                     uint64_t T = F & rookthreats(si, empty) & targets;
@@ -2285,58 +2318,67 @@ int main(int argc, char * argv []) {
 }
 
 // pybind11
-/// Python Bindings
-//
-// #include <fstream>
-// #include <pybind11/pybind11.h>
-// #include <pybind11/stl.h>
-// namespace py = pybind11;
-//
-// PYBIND11_MODULE(chessboard2, m) {
-//     py::class_<Move>(m, "Move")
-//         .def(py::init<>())
-//         .def("tc", &Move::tc)
-//         .def("tr", &Move::tr)
-//         .def("ti", &Move::ti)
-//         .def("sc", &Move::sc)
-//         .def("sr", &Move::sr)
-//         .def("si", &Move::si)
-//         .def("sp", &Move::sp)
-//         .def("cp", &Move::cp)
-//         .def("bqcr", &Move::bqcr)
-//         .def("wqcr", &Move::wqcr)
-//         .def("bkcr", &Move::bkcr)
-//         .def("wkcr", &Move::wkcr)
-//         .def("ep0", &Move::ep0)
-//         .def("epc0", &Move::epc0)
-//         .def("ep1", &Move::ep1)
-//         .def("epc1", &Move::epc1);
-//
-//     py::class_<Position>(m, "Position")
-//         .def(py::init<>())
-//         .def("reset", &Position::reset)
-//         .def("fen", &Position::fen)
-//         .def("legal_moves", &Position::legal_moves)
-//         .def("move_to_san", &Position::move_to_san)
-//         .def("san_to_move", &Position::move_to_san)
-//         .def("play", &Position::play)
-//         .def("board", &Position::board)
-//         .def("clone", &Position::clone)
-//         .def("safe", &Position::safe)
-//         .def("num_attackers", &Position::num_attackers)
-//         .def("checked", &Position::checked)
-//         .def("mated", &Position::mated)
-//         .def("__repr__", &Position::fen);
-//
-//     m.def("perft", &perft);
-//
-//     m.def("capturetest", &capturetest);
-//
-//     m.def("checktest", &checktest);
-//
-//     m.def("enpassanttest", &enpassanttest);
-//
-//     m.def("doublechecktest", &doublechecktest);
-//
-//     m.def("matetest", &matetest);
-// }
+// Python Bindings
+
+#include <fstream>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+namespace py = pybind11;
+
+PYBIND11_MODULE(chessboard2, m) {
+    py::class_<Move>(m, "Move")
+        .def(py::init<>())
+        .def("tc", &Move::tc)
+        .def("tr", &Move::tr)
+        .def("ti", &Move::ti)
+        .def("sc", &Move::sc)
+        .def("sr", &Move::sr)
+        .def("si", &Move::si)
+        .def("sp", &Move::sp)
+        .def("cp", &Move::cp)
+        .def("bqcr", &Move::bqcr)
+        .def("wqcr", &Move::wqcr)
+        .def("bkcr", &Move::bkcr)
+        .def("wkcr", &Move::wkcr)
+        .def("ep0", &Move::ep0)
+        .def("epc0", &Move::epc0)
+        .def("ep1", &Move::ep1)
+        .def("epc1", &Move::epc1)
+        .def("__repr__", &Move::repr);
+
+    py::class_<Position>(m, "Position")
+        .def(py::init<>())
+        .def("reset", &Position::reset)
+        .def("fen", &Position::fen)
+        .def("legal_moves", &Position::legal_moves)
+        .def("move_to_san", &Position::move_to_san)
+        .def("san_to_move", &Position::san_to_move)
+        .def("play", &Position::play)
+        .def("board", &Position::board)
+        .def("clone", &Position::clone)
+        .def("safe", &Position::safe)
+        .def("num_attackers", &Position::num_attackers)
+        .def("checked", &Position::checked)
+        .def("mated", &Position::mated)
+        .def("epc", &Position::epc)
+        .def("ep", &Position::ep)
+        .def("epi", &Position::epi)
+        .def("c", &Position::c)
+        .def("wkcr", &Position::wkcr)
+        .def("wqcr", &Position::wqcr)
+        .def("bkcr", &Position::bkcr)
+        .def("bqcr", &Position::bqcr)
+        .def("__repr__", &Position::fen);
+
+    m.def("perft", &perft);
+
+    m.def("capturetest", &capturetest);
+
+    m.def("checktest", &checktest);
+
+    m.def("enpassanttest", &enpassanttest);
+
+    m.def("doublechecktest", &doublechecktest);
+
+    m.def("matetest", &matetest);
+}
