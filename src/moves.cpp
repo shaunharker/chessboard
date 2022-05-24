@@ -739,7 +739,7 @@ struct Move {
     constexpr uint64_t s() const {return 1ULL << si();}
     constexpr uint64_t t() const {return 1ULL << ti();}
     constexpr uint64_t st() const {return s() | t();}
-    constexpr uint64_t ui() const {return (tr() << 3) | sc();}
+    constexpr uint64_t ui() const {return (sr() << 3) | tc();}
     constexpr uint64_t u() const {return 1ULL << ui();}
     constexpr uint8_t cr() const {return (wkcr() ? 0x01 : 0x00) | (wqcr() ? 0x02 : 0x00) | (bkcr() ? 0x04 : 0x00) | (bqcr() ? 0x08 : 0x00);}
     constexpr bool is_ep() const {
