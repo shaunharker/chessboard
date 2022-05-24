@@ -190,17 +190,17 @@ compute_ray(RayFun ray){
 
 std::array<uint64_t, 64> NW_RAY = compute_ray(nw_ray);
 
-std::array<uint64_t, 64>  N_RAY = compute_ray(n_ray);
+std::array<uint64_t, 64> N_RAY = compute_ray(n_ray);
 
 std::array<uint64_t, 64> NE_RAY = compute_ray(ne_ray);
 
-std::array<uint64_t, 64>  W_RAY = compute_ray(w_ray);
+std::array<uint64_t, 64> W_RAY = compute_ray(w_ray);
 
-std::array<uint64_t, 64>  E_RAY = compute_ray(e_ray);
+std::array<uint64_t, 64> E_RAY = compute_ray(e_ray);
 
 std::array<uint64_t, 64> SW_RAY = compute_ray(sw_ray);
 
-std::array<uint64_t, 64>  S_RAY = compute_ray(s_ray);
+std::array<uint64_t, 64> S_RAY = compute_ray(s_ray);
 
 std::array<uint64_t, 64> SE_RAY = compute_ray(se_ray);
 
@@ -743,168 +743,176 @@ struct Move {
     constexpr uint64_t u() const {return 1ULL << ui();}
     constexpr uint8_t cr() const {return (wkcr() ? 0x01 : 0x00) | (wqcr() ? 0x02 : 0x00) | (bkcr() ? 0x04 : 0x00) | (bqcr() ? 0x08 : 0x00);}
     constexpr bool is_ep() const {
-        return (sp() == PAWN) && (sc() != tc()) && (cp() == SPACE);
+        bool result = (sp() == PAWN) && (sc() != tc()) && (cp() == SPACE);
+
+        // debug
+        if (result && (tc() != epc0())) {
+            std::cout << "Move::is_ep() contradiction\n";
+            std::cout.flush();
+            abort();
+        }
+        return result;
     }
     // feasibility (optional? might need it for future tables)
-    constexpr bool kcr() const {return wkcr() && bkcr();}
-    constexpr bool qcr() const {return wkcr() && bkcr();}
-    constexpr bool wcr() const {return wkcr() && wqcr();}
-    constexpr bool bcr() const {return bkcr() && bqcr();}
-
-    // TODO: repair this
-    constexpr bool feasible() const {
-
-        // sp must be a Piece enum idx
-        if (sp() > 6) return false;
-
-        // can't move from an empty square
-        if (sp() == SPACE) return false;
-
-        // cp must be a Piece enum idx
-        if (cp() > 6) return false;
-
-        // cp may not name KING
-        if (cp() == KING) return false;
-
-        // source != target
-        if ((sc() == tc()) && (sr() == tr())) return false;
-
-        // only pawns promote, and it must be properly positioned
-        // and cannot promote to pawn or king
-        if (pr() && ((sr() != (c() ? 6 : 1)) || (tr() != (c() ? 7 : 0)) || (sp() == PAWN) || (sp() == KING))) return false;
-
-        // pawns are never on rank 8 or rank 1 (row 0 or row 7)
-        if ((sp() == PAWN) && ((sr() == 0) ||
-            (sr() == 7))) return false;
-        if ((cp() == PAWN) && ((tr() == 0) ||
-            (tr() == 7))) return false;
-
-        if ((sp() == PAWN) || pr()) {
-            // pawns can only move forward one rank at a time,
-            // except for their first move
-            if (sr() != tr() + (c() ? -1 : 1)) {
-                if ((sr() != (c() ? 1 : 6)) ||
-                    (tr() != (c() ? 3 : 4))) return false;
-                // can't capture on double push
-                if (cp() != SPACE) return false;
-            }
-            // pawns stay on file when not capturing,
-            // and move over one file when capturing.
-            // i) can't move over more than one file
-            if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) return false;
-            // ii) can't capture forward
-            if ((sc() == tc()) && (cp() != SPACE)) return false;
-            // iii) can't move diagonal without capture
-            if ((sc() != tc()) && (cp() == SPACE)) {
-                // invalid unless possible en passant
-                if (tr() != (c() ? 5 : 2)) return false;
-            }
-        }
-
-        if (sp() == KNIGHT) {
-            // i know how horsies move
-            if ((sc()*sc() + tc()*tc() + sr()*sr() + tr()*tr())
-                != 5 + 2*(sc()*tc() + sr()*tr())) return false;
-        }
-        if (sp() == BISHOP) {
-            // bishops move on diagonals and antidiagonals
-            if ((sc() + sr() != tc() + tr()) && // not on same antidiagonal
-                    (sc() + tr() != tc() + sr())) // not on same diagonal
-                return false;
-        }
-        if (sp() == ROOK) {
-            // rooks move on ranks and files (rows and columns)
-            if ((sc() != tc()) && (sr() != tr())) return false;
-            // conditions where kingside castle right may change
-            if (kcr() && !((sc() == 7) && (sr() == (c() ? 0 : 7))) && !((tc() == 7) && (tr() == (c() ? 7 : 0)))) return false;
-            // if losing kingside rights, cannot move to a rook to files a-e
-            if (kcr() && (tc() < 5)) return false;
-            // conditions where queenside castle right may change
-            if (qcr() && !((sc() == 0) && (sr() == (c() ? 0 : 7))) && !((tc() == 0) && (tr() == (c() ? 7 : 0)))) return false;
-            // if losing queenside rights, cannot move a rook to files e-h
-            if (qcr() && ((tc() > 3))) return false;
-        }
-        if (sp() == QUEEN) {
-            // queens move on ranks, files, diagonals, and
-            // antidiagonals.
-            if ((sc() + sr() != tc() + tr()) && // not on same antidiagonal
-                    (sc() + tr() != tc() + sr()) && // not on same diagonal
-                    (sc() != tc()) && // not on same file
-                    (sr() != tr())) // not on same rank
-                return false;
-            if ((sc() == tc()) && (sr() == tr())) return false;
-        }
-        if (sp() == KING) {
-            // if kingside castle, must be losing kingside rights
-            if ((sc() == 4) && (sr() == (c() ? 0 : 7)) && (tc() == 6) && (tr() == (c() ? 0 : 7)) && !kcr()) return false;
-            // if queenside castle, must be losing queenside rights
-            if ((sc() == 4) && (sr() == (c() ? 0 : 7)) && (tc() == 2) && (tr() == (c() ? 0 : 7)) && !qcr()) return false;
-            // king takes rook losing castling rights:
-            //   only diagonal/antidiagonal captures could
-            //   possibly occur during play:
-            if ((cp() == ROOK) && kcr() && (tr() == (c() ? 7 : 0)) && (tc() == 7) && !((sr() == (c() ? 6 : 1)) && (sc() == 6))) return false;
-            if ((cp() == ROOK) && qcr() && (tr() == (c() ? 7 : 0)) && (tc() == 0) && !((sr() == (c() ? 6 : 1)) && (sc() == 1))) return false;
-            // castling cannot capture, must be properly positioned
-            if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) {
-                if (!((tc() == 6) && kcr()) && !((tc() == 2) && qcr())) return false;
-                if (cp() != SPACE) return false;
-                if (sc() != 4) return false;
-                if (sr() != (c() ? 0 : 7)) return false;
-                if (tr() != (c() ? 0 : 7)) return false;
-            }
-            // kings move to neighboring squares
-            if (((sc()*sc() + tc()*tc() + sr()*sr()) + tr()*tr() >
-                2*(1 + sc()*tc() + sr()*tr())) && !((sc() == 4) &&
-                (sr() == (c() ? 0 : 7)) && (tr()==sr()) &&
-                (((tc()==2) && qcr()) || ((tc()==6) && kcr()))))
-                return false;
-        }
-        // to change castling rights there are nine cases:
-        // 1. king move from its home square
-        // 2. a1 rook captured by black
-        // 3. h1 rook captured by black
-        // 4. a8 rook captured by white
-        // 5. h8 rook captured by white
-        // 6. a1 rook moved by white
-        // 7. h1 rook moved by white
-        // 8. a8 rook moved by black
-        // 9. h8 rook moved black
-        // White could capture an unmoved a8 rook with its unmoved a1 rook,
-        // and similar scenarios, so the cases aren't mutually exclusive.
-        // it isn't possible to remove castling rights via a Rf8 x Rh8 because the enemy king would be in check. Similarly for other exceptions
-        bool kingmove = (sp() == KING) && (sr() == (c() ? 0 : 7)) && (sc() == 4);
-        bool a1rookcapture = (cp() == ROOK) && (ti() == 56) && c();
-        bool a8rookcapture = (cp() == ROOK) && (ti() == 0) && !c();
-        bool h1rookcapture = (cp() == ROOK) && (ti() == 63) && c();
-        bool h8rookcapture = (cp() == ROOK) && (ti() == 7) && !c();
-
-        bool a1rookmove = (sp() == ROOK) && (si() == 56) && !c() && (tc() < 4);
-        bool a8rookmove = (sp() == ROOK) && (si() == 0) && c() && (tc() < 4);
-        bool h1rookmove = (sp() == ROOK) && (si() == 63) && !c() && (tc() > 4);
-        bool h8rookmove = (sp() == ROOK) && (si() == 7) && c() && (tc() > 4);
-        if (kcr() && !(kingmove || h1rookmove || h8rookmove)) {
-            if (h1rookcapture || h8rookcapture) {
-                // exclude moves implying a king is en prise
-                if ((sp() == ROOK) && (sc() < 6)) return false;
-                if ((sp() == QUEEN) && (sr() == tr()) && (sc() < 6)) return false;
-                if ((sp() == KING) && ((sr() == tr()) || (sc() == tc()))) return false;
-            } else {
-                return false;
-            }
-        }
-        if (qcr() && !(kingmove || a1rookmove || a8rookmove)) {
-            if (a1rookcapture || a8rookcapture) {
-                // exclude moves implying a king is en prise
-                if ((sp() == ROOK) && (sc() > 2)) return false;
-                if ((sp() == QUEEN) && (sr() == tr()) && (sc() > 2)) return false;
-                if ((sp() == KNIGHT) && (sr() == (c() ? 6 : 1)) && (sc() == 2)) return false;
-                if ((sp() == KING) && ((sr() == tr()) || (sc() == tc()))) return false;
-            } else {
-                    return false;
-            }
-        }
-        return true;
-    }
+    // constexpr bool kcr() const {return wkcr() && bkcr();}
+    // constexpr bool qcr() const {return wkcr() && bkcr();}
+    // constexpr bool wcr() const {return wkcr() && wqcr();}
+    // constexpr bool bcr() const {return bkcr() && bqcr();}
+    //
+    // // TODO: repair this
+    // constexpr bool feasible() const {
+    //
+    //     // sp must be a Piece enum idx
+    //     if (sp() > 6) return false;
+    //
+    //     // can't move from an empty square
+    //     if (sp() == SPACE) return false;
+    //
+    //     // cp must be a Piece enum idx
+    //     if (cp() > 6) return false;
+    //
+    //     // cp may not name KING
+    //     if (cp() == KING) return false;
+    //
+    //     // source != target
+    //     if ((sc() == tc()) && (sr() == tr())) return false;
+    //
+    //     // only pawns promote, and it must be properly positioned
+    //     // and cannot promote to pawn or king
+    //     if (pr() && ((sr() != (c() ? 6 : 1)) || (tr() != (c() ? 7 : 0)) || (sp() == PAWN) || (sp() == KING))) return false;
+    //
+    //     // pawns are never on rank 8 or rank 1 (row 0 or row 7)
+    //     if ((sp() == PAWN) && ((sr() == 0) ||
+    //         (sr() == 7))) return false;
+    //     if ((cp() == PAWN) && ((tr() == 0) ||
+    //         (tr() == 7))) return false;
+    //
+    //     if ((sp() == PAWN) || pr()) {
+    //         // pawns can only move forward one rank at a time,
+    //         // except for their first move
+    //         if (sr() != tr() + (c() ? -1 : 1)) {
+    //             if ((sr() != (c() ? 1 : 6)) ||
+    //                 (tr() != (c() ? 3 : 4))) return false;
+    //             // can't capture on double push
+    //             if (cp() != SPACE) return false;
+    //         }
+    //         // pawns stay on file when not capturing,
+    //         // and move over one file when capturing.
+    //         // i) can't move over more than one file
+    //         if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) return false;
+    //         // ii) can't capture forward
+    //         if ((sc() == tc()) && (cp() != SPACE)) return false;
+    //         // iii) can't move diagonal without capture
+    //         if ((sc() != tc()) && (cp() == SPACE)) {
+    //             // invalid unless possible en passant
+    //             if (tr() != (c() ? 5 : 2)) return false;
+    //         }
+    //     }
+    //
+    //     if (sp() == KNIGHT) {
+    //         // i know how horsies move
+    //         if ((sc()*sc() + tc()*tc() + sr()*sr() + tr()*tr())
+    //             != 5 + 2*(sc()*tc() + sr()*tr())) return false;
+    //     }
+    //     if (sp() == BISHOP) {
+    //         // bishops move on diagonals and antidiagonals
+    //         if ((sc() + sr() != tc() + tr()) && // not on same antidiagonal
+    //                 (sc() + tr() != tc() + sr())) // not on same diagonal
+    //             return false;
+    //     }
+    //     if (sp() == ROOK) {
+    //         // rooks move on ranks and files (rows and columns)
+    //         if ((sc() != tc()) && (sr() != tr())) return false;
+    //         // conditions where kingside castle right may change
+    //         if (kcr() && !((sc() == 7) && (sr() == (c() ? 0 : 7))) && !((tc() == 7) && (tr() == (c() ? 7 : 0)))) return false;
+    //         // if losing kingside rights, cannot move to a rook to files a-e
+    //         if (kcr() && (tc() < 5)) return false;
+    //         // conditions where queenside castle right may change
+    //         if (qcr() && !((sc() == 0) && (sr() == (c() ? 0 : 7))) && !((tc() == 0) && (tr() == (c() ? 7 : 0)))) return false;
+    //         // if losing queenside rights, cannot move a rook to files e-h
+    //         if (qcr() && ((tc() > 3))) return false;
+    //     }
+    //     if (sp() == QUEEN) {
+    //         // queens move on ranks, files, diagonals, and
+    //         // antidiagonals.
+    //         if ((sc() + sr() != tc() + tr()) && // not on same antidiagonal
+    //                 (sc() + tr() != tc() + sr()) && // not on same diagonal
+    //                 (sc() != tc()) && // not on same file
+    //                 (sr() != tr())) // not on same rank
+    //             return false;
+    //         if ((sc() == tc()) && (sr() == tr())) return false;
+    //     }
+    //     if (sp() == KING) {
+    //         // if kingside castle, must be losing kingside rights
+    //         if ((sc() == 4) && (sr() == (c() ? 0 : 7)) && (tc() == 6) && (tr() == (c() ? 0 : 7)) && !kcr()) return false;
+    //         // if queenside castle, must be losing queenside rights
+    //         if ((sc() == 4) && (sr() == (c() ? 0 : 7)) && (tc() == 2) && (tr() == (c() ? 0 : 7)) && !qcr()) return false;
+    //         // king takes rook losing castling rights:
+    //         //   only diagonal/antidiagonal captures could
+    //         //   possibly occur during play:
+    //         if ((cp() == ROOK) && kcr() && (tr() == (c() ? 7 : 0)) && (tc() == 7) && !((sr() == (c() ? 6 : 1)) && (sc() == 6))) return false;
+    //         if ((cp() == ROOK) && qcr() && (tr() == (c() ? 7 : 0)) && (tc() == 0) && !((sr() == (c() ? 6 : 1)) && (sc() == 1))) return false;
+    //         // castling cannot capture, must be properly positioned
+    //         if (sc()*sc() + tc()*tc() > 1 + 2*sc()*tc()) {
+    //             if (!((tc() == 6) && kcr()) && !((tc() == 2) && qcr())) return false;
+    //             if (cp() != SPACE) return false;
+    //             if (sc() != 4) return false;
+    //             if (sr() != (c() ? 0 : 7)) return false;
+    //             if (tr() != (c() ? 0 : 7)) return false;
+    //         }
+    //         // kings move to neighboring squares
+    //         if (((sc()*sc() + tc()*tc() + sr()*sr()) + tr()*tr() >
+    //             2*(1 + sc()*tc() + sr()*tr())) && !((sc() == 4) &&
+    //             (sr() == (c() ? 0 : 7)) && (tr()==sr()) &&
+    //             (((tc()==2) && qcr()) || ((tc()==6) && kcr()))))
+    //             return false;
+    //     }
+    //     // to change castling rights there are nine cases:
+    //     // 1. king move from its home square
+    //     // 2. a1 rook captured by black
+    //     // 3. h1 rook captured by black
+    //     // 4. a8 rook captured by white
+    //     // 5. h8 rook captured by white
+    //     // 6. a1 rook moved by white
+    //     // 7. h1 rook moved by white
+    //     // 8. a8 rook moved by black
+    //     // 9. h8 rook moved black
+    //     // White could capture an unmoved a8 rook with its unmoved a1 rook,
+    //     // and similar scenarios, so the cases aren't mutually exclusive.
+    //     // it isn't possible to remove castling rights via a Rf8 x Rh8 because the enemy king would be in check. Similarly for other exceptions
+    //     bool kingmove = (sp() == KING) && (sr() == (c() ? 0 : 7)) && (sc() == 4);
+    //     bool a1rookcapture = (cp() == ROOK) && (ti() == 56) && c();
+    //     bool a8rookcapture = (cp() == ROOK) && (ti() == 0) && !c();
+    //     bool h1rookcapture = (cp() == ROOK) && (ti() == 63) && c();
+    //     bool h8rookcapture = (cp() == ROOK) && (ti() == 7) && !c();
+    //
+    //     bool a1rookmove = (sp() == ROOK) && (si() == 56) && !c() && (tc() < 4);
+    //     bool a8rookmove = (sp() == ROOK) && (si() == 0) && c() && (tc() < 4);
+    //     bool h1rookmove = (sp() == ROOK) && (si() == 63) && !c() && (tc() > 4);
+    //     bool h8rookmove = (sp() == ROOK) && (si() == 7) && c() && (tc() > 4);
+    //     if (kcr() && !(kingmove || h1rookmove || h8rookmove)) {
+    //         if (h1rookcapture || h8rookcapture) {
+    //             // exclude moves implying a king is en prise
+    //             if ((sp() == ROOK) && (sc() < 6)) return false;
+    //             if ((sp() == QUEEN) && (sr() == tr()) && (sc() < 6)) return false;
+    //             if ((sp() == KING) && ((sr() == tr()) || (sc() == tc()))) return false;
+    //         } else {
+    //             return false;
+    //         }
+    //     }
+    //     if (qcr() && !(kingmove || a1rookmove || a8rookmove)) {
+    //         if (a1rookcapture || a8rookcapture) {
+    //             // exclude moves implying a king is en prise
+    //             if ((sp() == ROOK) && (sc() > 2)) return false;
+    //             if ((sp() == QUEEN) && (sr() == tr()) && (sc() > 2)) return false;
+    //             if ((sp() == KNIGHT) && (sr() == (c() ? 6 : 1)) && (sc() == 2)) return false;
+    //             if ((sp() == KING) && ((sr() == tr()) || (sc() == tc()))) return false;
+    //         } else {
+    //                 return false;
+    //         }
+    //     }
+    //     return true;
+    // }
 };
 
 struct Position {
@@ -1024,7 +1032,7 @@ struct Position {
                 case BISHOP: bishop ^= t; break;
                 case ROOK: rook ^= t; break;
                 case QUEEN: queen ^= t; break;
-                default: break; // actually, HCF
+                default: abort(); break; // actually, HCF
             }
         } else {
             switch (sp) {
@@ -1034,6 +1042,7 @@ struct Position {
                 case ROOK: rook ^= st; break;
                 case QUEEN: queen ^= st; break;
                 case KING: king ^= st; break;
+                default: abort(); break;
             }
         }
 
@@ -1221,13 +1230,15 @@ struct Position {
         uint8_t sr = si >> 3;
         uint8_t tc = ti & 7;
         uint8_t tr = ti >> 3;
-        bool bqcr1 = bqcr() && ((si == 4) || (ti == 2) || (si == 0));
-        bool bkcr1 = bkcr() && ((si == 4) || (ti == 7) || (si == 7));
-        bool wqcr1 = wqcr() && ((si == 60) || (ti == 58) || (si == 7));
-        bool wkcr1 = wkcr() && ((si == 60) || (ti == 62) || (si == 63));
+        // rights change if they are present and then disturbed
+        bool bqcr1 = bqcr() && ((si == 4) || (si == 0) || (ti == 0));
+        bool bkcr1 = bkcr() && ((si == 4) || (si == 7) || (ti == 7));
+        bool wqcr1 = wqcr() && ((si == 60) || (si == 56) || (ti == 56));
+        bool wkcr1 = wkcr() && ((si == 60) || (si == 63) || (ti == 63));
         bool ep1 = (sp == PAWN) && ((si == ti + 16) || (ti == si + 16));
         uint8_t epc1 = ep1 ? tc : 0;
         auto move = Move(tc, tr, bqcr1, bkcr1, sc, sr, wqcr1, wkcr1, cp, sp, pr, c(), epc(), ep(), epc1, ep1);
+        //(uint8_t tc, uint8_t tr, bool bqcr, bool bkcr, uint8_t sc, uint8_t sr, bool wqcr, bool wkcr, uint8_t cp, uint8_t sp, bool pr, bool color, uint8_t epc0, bool ep0, uint8_t epc1, bool ep1)
         moves.push_back(move);
     }
 
@@ -1976,7 +1987,7 @@ struct Position {
                 //   PP.P    en passant capture.
                 //
                 //  (the v and ^ indicate ep square)
-                uint8_t row = c() ? 4 : 3;
+                uint8_t row = c() ? 5 : 4;
                 bool pin = false;
                 if (okr == row) {
                     auto R = (rook & them & (rank_8 << (8*row)));
