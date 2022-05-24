@@ -951,7 +951,7 @@ struct Position {
     constexpr bool bqcr() const { return cr & 8; }
     constexpr uint8_t epc() const { return epc_; }
     constexpr bool ep() const { return ep_; }
-    constexpr uint8_t epi() const { return epc_ | (c() ? 0x10 : 0x30); }
+    constexpr uint8_t epi() const { return epc_ | (c() ? 0x30 : 0x10); }
     constexpr bool c() const { return c_; }
 
     // void play(Position rhs) {
