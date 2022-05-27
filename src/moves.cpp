@@ -392,9 +392,10 @@ std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> compute_cap() {
 
     std::array<std::pair<uint8_t,uint8_t>, (1 << 24)> result {};
     for (uint32_t x = 0; x < (1 << 24); ++ x) {
-        uint8_t slider = x & 0xFF;
-        uint8_t us = (x >> 8) & 0xFF;
-        uint8_t them = (x >> 16) & 0xFF;
+        // 0xFE not 0xFF to ignore zeroeth square
+        uint8_t slider = x & 0xFE;
+        uint8_t us = (x >> 8) & 0xFE;
+        uint8_t them = (x >> 16) & 0xFE;
         uint8_t checker;
         if (slider & them) {
             checker = ntz(slider & them);
@@ -676,7 +677,7 @@ enum Piece {
   KING = 6
 };
 
-constexpr std::string_view GLYPHS(".PNBRQK...............................................................................................................................................................................................................................................................................................................................................................................................................................................................................");
+constexpr std::string_view GLYPHS(".PNBRQK");
 
 struct Move {
     uint8_t tc_tr_bqcr_bkcr;
@@ -755,7 +756,7 @@ struct Move {
                 } else if (tc() == 2) {
                     ss << "O-O-O";
                 } else {
-                    std::cout << "repr. K" << ((cp()!=SPACE)?"x":"") << square(ti()) << "\n";
+                    //std::cout << "repr. K" << ((cp()!=SPACE)?"x":"") << square(ti()) << "\n";
                     ss << "K";
                     if(cp() != SPACE) ss << "x";
                     ss << square(ti());
@@ -991,7 +992,7 @@ struct Position {
         rook = 0x8100000000000081; // a1 | a8 | h1 | h8;
         bishop = 0x2400000000000024; // c1 | c8 | f1 | f8;
         knight = 0x4200000000000042; // b1 | b8 | g1 | g8;
-        cr = 0x00; // castling rights
+        cr = 0x0F; // castling rights
         epc_ = 0x00; // en passant column (should be zero when ep_ == false)
         ep_ = false; // true if previous move was double push
         c_ = false; // true if black to move
@@ -1344,6 +1345,11 @@ struct Position {
             uint8_t f_qb = f(qb, sr, sc);
             uint32_t address = (f_them << 16) | (f_us << 8) | f_qb;
 
+            // std::cout << ".\n";
+            // std::cout << std::bitset<8>(f_them) << "\n";
+            // std::cout << std::bitset<8>(f_us) << "\n";
+            // std::cout << std::bitset<8>(f_qb) << "\n";
+
             if (address >= CAP.size()) {
                 std::cout << "check bish. CAP whoopsie\n";
                 std::cout << "address = " << int(address) << "\n";
@@ -1352,6 +1358,7 @@ struct Position {
             }
 
             auto const& [checker, pin] = CAP[address];
+            //std::cout << int(checker) << " " << int(pin) << "\n";
             if (checker != 0 && pin == 0) {
                 return false;
             }
@@ -1504,7 +1511,7 @@ struct Position {
             }
             //std::cout << "disambiguate emd B\n";
             //std::cout.flush();
-            if (popcount(S & (rank_8 << move.sr())) == 1) {
+            if (popcount(S & (rank_8 << (8*move.sr()))) == 1) {
                 ss << char('8' - move.sr());
                 return;
             }
@@ -1727,6 +1734,7 @@ struct Position {
         king ^= ok;
 
         // Are we in check?
+        uint8_t num_checkers = 0;
 
         // We compute a bitboard we name "targets" which in the case of a
         // check gives us the bitboard of acceptable target squares for
@@ -1770,6 +1778,7 @@ struct Position {
                      abort();
                  }
                  targets &= INTERPOSITIONS[address];
+                 num_checkers += 1;
                } else {
                  pinned |= 1ULL << (oki + step * pin);
                }
@@ -1818,10 +1827,9 @@ struct Position {
             return moves;
         }
 
-        if (targets == uint64_t(-1)) { // no checks
+        if (num_checkers == 0) { // no checks
             // Kingside Castle
             if (c() ? bkcr() : wkcr()) {
-
                 if (oki+2 >= 64) {
                     std::cout << "legal_moves kingthreats(" << int(oki+2) << (c() ? " black)\n" : " white)\n");
                     print_tape();
@@ -2348,51 +2356,53 @@ uint64_t matetest(Position & board, std::vector<Move> & prev, int depth) {
 // main
 
 int main(int argc, char * argv []) {
-    auto P = Position();
-    // ['Na3', 'e6', 'd4', 'Ke7', 'Qd2', 'Kf6']
-    P.play(P.san_to_move("Na3"));
-    P.play(P.san_to_move("e6"));
-    P.play(P.san_to_move("d4"));
-    P.play(P.san_to_move("Ke7"));
-    P.play(P.san_to_move("Qd2"));
-    P.play(P.san_to_move("Kf6"));
-    std::cout.flush();
-    auto M = P.legal_moves();
-
-    std::cout << "legal moves\n";
-    std::cout << P.board() << "\n";
-    for (Move m : P.legal_moves()) {
-        std::cout << m.repr() << "\n";
-    }
-    std::cout.flush();
-    std::cout << "Toodles.\n";
-
-    // for (int d = 0; d < 8; ++ d) {
-    //     auto P = Position(); // new chessboard
-    //     std::cout << "\n----------\ndepth " << d << "\n";
-    //     std::cout << "perft "; std::cout.flush();
-    //     std::cout << perft(P, d) << "\n";
+    // auto P = Position();
+    // P.play(P.san_to_move("e4"));
+    // P.play(P.san_to_move("e5"));
+    // P.play(P.san_to_move("Nf3"));
+    // P.play(P.san_to_move("Nc6"));
+    // P.play(P.san_to_move("Be2"));
+    // P.play(P.san_to_move("d5"));
+    // // P.play(P.san_to_move("Qg5+"));
+    // //
+    // std::cout.flush();
+    // auto M = P.legal_moves();
     //
-    //     std::cout << "checks "; std::cout.flush();
-    //     std::cout << checktest(P, d) << "\n";
-    //
-    //     std::cout << "double checks "; std::cout.flush();
-    //     std::cout << doublechecktest(P, d) << "\n";
-    //
-    //     std::cout << "captures "; std::cout.flush();
-    //     std::cout << capturetest(P, d) << "\n";
-    //
-    //     // std::cout << "double pushes "; std::cout.flush();
-    //     // std::cout << doublepushtest(P, d) << "\n";
-    //
-    //     std::cout << "en passant "; std::cout.flush();
-    //     std::cout << enpassanttest(P, d) << "\n";
-    //
-    //     std::cout << "mates "; std::cout.flush();
-    //     //std::cout << P.board() << "\n";
-    //     std::vector<Move> prev {};
-    //     std::cout << matetest(P, prev, d) << "\n";
+    // std::cout << "legal moves\n";
+    // std::cout << P.board() << "\n";
+    // for (Move m : P.legal_moves()) {
+    //     std::cout << m.repr() << "\n";
+    //     std::cout << P.move_to_san(m) << "\n";
     // }
+    // std::cout.flush();
+    // std::cout << "Toodles.\n";
+
+    for (int d = 0; d < 8; ++ d) {
+        auto P = Position(); // new chessboard
+        std::cout << "\n----------\ndepth " << d << "\n";
+        std::cout << "perft "; std::cout.flush();
+        std::cout << perft(P, d) << "\n";
+
+        std::cout << "checks "; std::cout.flush();
+        std::cout << checktest(P, d) << "\n";
+
+        std::cout << "double checks "; std::cout.flush();
+        std::cout << doublechecktest(P, d) << "\n";
+
+        std::cout << "captures "; std::cout.flush();
+        std::cout << capturetest(P, d) << "\n";
+
+        // std::cout << "double pushes "; std::cout.flush();
+        // std::cout << doublepushtest(P, d) << "\n";
+
+        std::cout << "en passant "; std::cout.flush();
+        std::cout << enpassanttest(P, d) << "\n";
+
+        std::cout << "mates "; std::cout.flush();
+        //std::cout << P.board() << "\n";
+        std::vector<Move> prev {};
+        std::cout << matetest(P, prev, d) << "\n";
+    }
 
     return 0;
 }
@@ -2400,65 +2410,65 @@ int main(int argc, char * argv []) {
 // pybind11
 // Python Bindings
 
-// #include <fstream>
-// #include <pybind11/pybind11.h>
-// #include <pybind11/stl.h>
-// namespace py = pybind11;
-//
-// PYBIND11_MODULE(chessboard2, m) {
-//     py::class_<Move>(m, "Move")
-//         .def(py::init<>())
-//         .def("tc", &Move::tc)
-//         .def("tr", &Move::tr)
-//         .def("ti", &Move::ti)
-//         .def("sc", &Move::sc)
-//         .def("sr", &Move::sr)
-//         .def("si", &Move::si)
-//         .def("sp", &Move::sp)
-//         .def("cp", &Move::cp)
-//         .def("bqcr", &Move::bqcr)
-//         .def("wqcr", &Move::wqcr)
-//         .def("bkcr", &Move::bkcr)
-//         .def("wkcr", &Move::wkcr)
-//         .def("ep0", &Move::ep0)
-//         .def("epc0", &Move::epc0)
-//         .def("ep1", &Move::ep1)
-//         .def("epc1", &Move::epc1)
-//         .def("__repr__", &Move::repr);
-//
-//     py::class_<Position>(m, "Position")
-//         .def(py::init<>())
-//         .def("reset", &Position::reset)
-//         .def("fen", &Position::fen)
-//         .def("legal_moves", &Position::legal_moves)
-//         .def("move_to_san", &Position::move_to_san)
-//         .def("san_to_move", &Position::san_to_move)
-//         .def("play", &Position::play)
-//         .def("board", &Position::board)
-//         .def("clone", &Position::clone)
-//         .def("safe", &Position::safe)
-//         .def("num_attackers", &Position::num_attackers)
-//         .def("checked", &Position::checked)
-//         .def("mated", &Position::mated)
-//         .def("epc", &Position::epc)
-//         .def("ep", &Position::ep)
-//         .def("epi", &Position::epi)
-//         .def("c", &Position::c)
-//         .def("wkcr", &Position::wkcr)
-//         .def("wqcr", &Position::wqcr)
-//         .def("bkcr", &Position::bkcr)
-//         .def("bqcr", &Position::bqcr)
-//         .def("__repr__", &Position::fen);
-//
-//     m.def("perft", &perft);
-//
-//     m.def("capturetest", &capturetest);
-//
-//     m.def("checktest", &checktest);
-//
-//     m.def("enpassanttest", &enpassanttest);
-//
-//     m.def("doublechecktest", &doublechecktest);
-//
-//     m.def("matetest", &matetest);
-// }
+#include <fstream>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+namespace py = pybind11;
+
+PYBIND11_MODULE(chessboard2, m) {
+    py::class_<Move>(m, "Move")
+        .def(py::init<>())
+        .def("tc", &Move::tc)
+        .def("tr", &Move::tr)
+        .def("ti", &Move::ti)
+        .def("sc", &Move::sc)
+        .def("sr", &Move::sr)
+        .def("si", &Move::si)
+        .def("sp", &Move::sp)
+        .def("cp", &Move::cp)
+        .def("bqcr", &Move::bqcr)
+        .def("wqcr", &Move::wqcr)
+        .def("bkcr", &Move::bkcr)
+        .def("wkcr", &Move::wkcr)
+        .def("ep0", &Move::ep0)
+        .def("epc0", &Move::epc0)
+        .def("ep1", &Move::ep1)
+        .def("epc1", &Move::epc1)
+        .def("__repr__", &Move::repr);
+
+    py::class_<Position>(m, "Position")
+        .def(py::init<>())
+        .def("reset", &Position::reset)
+        .def("fen", &Position::fen)
+        .def("legal_moves", &Position::legal_moves)
+        .def("move_to_san", &Position::move_to_san)
+        .def("san_to_move", &Position::san_to_move)
+        .def("play", &Position::play)
+        .def("board", &Position::board)
+        .def("clone", &Position::clone)
+        .def("safe", &Position::safe)
+        .def("num_attackers", &Position::num_attackers)
+        .def("checked", &Position::checked)
+        .def("mated", &Position::mated)
+        .def("epc", &Position::epc)
+        .def("ep", &Position::ep)
+        .def("epi", &Position::epi)
+        .def("c", &Position::c)
+        .def("wkcr", &Position::wkcr)
+        .def("wqcr", &Position::wqcr)
+        .def("bkcr", &Position::bkcr)
+        .def("bqcr", &Position::bqcr)
+        .def("__repr__", &Position::fen);
+
+    m.def("perft", &perft);
+
+    m.def("capturetest", &capturetest);
+
+    m.def("checktest", &checktest);
+
+    m.def("enpassanttest", &enpassanttest);
+
+    m.def("doublechecktest", &doublechecktest);
+
+    m.def("matetest", &matetest);
+}
