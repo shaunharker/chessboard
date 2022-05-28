@@ -1809,6 +1809,7 @@ struct Position {
           uint8_t si = ntz(S);
           S &= S - 1;
           targets &= (1ULL << si);
+          num_checkers += 1;
         }
 
         // pawn checks
@@ -1817,15 +1818,14 @@ struct Position {
           uint8_t si = ntz(S);
           S &= S - 1;
           targets &= (1ULL << si);
-          // if (ep()) {
-          //     targets |= (1ULL << epi());
-          // }
+          num_checkers += 1;
         }
 
         if (targets == 0) { // king must move
-            //std::cout << "No targets.\n";
             return moves;
         }
+
+        //std::cout << "Targets = \n" << Vizboard({targets}) << "\n";
 
         if (num_checkers == 0) { // no checks
             // Kingside Castle
@@ -1957,12 +1957,12 @@ struct Position {
                 uint8_t sr = si >> 3;
                 if (sc + sr == okr + okc) {
                     Bitboard A = (sr + sc < 7) ? (antidiagonal >> (8*(7-sr-sc))) : (antidiagonal << (8*(sr+sc-7)));
-                    uint64_t T = A & bishopthreats(si, empty) & ~us;
+                    uint64_t T = A & bishopthreats(si, empty) & targets;
                     // if (T) std::cout << "antidiagonally pinned bishop moves\n";
                     add_move_s_T(moves, false, BISHOP, si, T);
                 } else if (sr - sc == okr - okc) {
                     Bitboard D = (sr > sc) ? (diagonal << (8*(sr-sc))) : (diagonal >> (8*(sc-sr)));
-                    uint64_t T = D & bishopthreats(si, empty) & ~us;
+                    uint64_t T = D & bishopthreats(si, empty) & targets;
                     // if (T) std::cout << "diagonally pinned bishop moves\n";
                     add_move_s_T(moves, false, BISHOP, si, T);
                 }
@@ -1993,8 +1993,9 @@ struct Position {
             uint8_t sc = si & 0x07;
             uint8_t ti = si + (c() ? 8 : -8);
             uint8_t tr = ti >> 3;
+            Bitboard t = 1ULL << ti;
             if (((s & pinned) != 0) && (sc != okc)) continue;
-            if ((targets & (1ULL << ti)) == 0) continue;
+            if ((targets & t) == 0) continue;
             if (tr == 0 || tr == 7) {
                 // std::cout << "pawn push promotion moves\n";
                 add_move_s_t(moves, true, QUEEN, si, ti);
@@ -2356,15 +2357,17 @@ uint64_t matetest(Position & board, std::vector<Move> & prev, int depth) {
 // main
 
 int main(int argc, char * argv []) {
+    // ['d4', 'e5', 'Bf4', 'Qg5', 'Kd2', 'Bb4+']
+    // ['Kd3', 'Ke3', 'Kc1', 'Nc3', 'c3']
+    // [Kd3, Ke3, Kc1, Bf4xg5, Bf4e3, Nb1c3, c3]
     // auto P = Position();
-    // P.play(P.san_to_move("e4"));
+    // P.play(P.san_to_move("d4"));
     // P.play(P.san_to_move("e5"));
-    // P.play(P.san_to_move("Nf3"));
-    // P.play(P.san_to_move("Nc6"));
-    // P.play(P.san_to_move("Be2"));
-    // P.play(P.san_to_move("d5"));
-    // // P.play(P.san_to_move("Qg5+"));
-    // //
+    // P.play(P.san_to_move("Bf4"));
+    // P.play(P.san_to_move("Qg5"));
+    // P.play(P.san_to_move("Kd2"));
+    // P.play(P.san_to_move("Bb4+"));
+    //
     // std::cout.flush();
     // auto M = P.legal_moves();
     //
