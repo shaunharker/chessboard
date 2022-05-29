@@ -2077,6 +2077,21 @@ struct Position {
             while (S) {
                 auto si = ntz(S);
                 S &= S-1;
+                //  Handle pins:
+                Bitboard s = 1ULL << si;
+                if (s & pinned) {
+                    uint8_t sc = si & 0x07;
+                    uint8_t sr = si >> 3;
+                    if ((sc == okc) || (sr == okr)) continue;
+                    uint8_t ti = epi();
+                    uint8_t tc = ti & 0x07;
+                    uint8_t tr = ti >> 3;
+                    if ((sr + sc) == (okr + okc)) {
+                        if ((sr + sc) != (tr + tc)) continue;
+                    } else { // sr - sc == okr - okc
+                        if ((sr + sc) == (tr + tc)) continue;
+                    }
+                }
                 //  Here we handle missed pawn pins of
                 //  the following forms:
                 //
@@ -2119,7 +2134,7 @@ struct Position {
                     }
                 }
                 if (!pin) {
-                    // std::cout << "en passant move\n";
+                    //std::cout << "en passant move " << si << " " << epi() << "\n";
                     add_move_s_t(moves, false, PAWN, si, epi());
 
                     // debug
@@ -2357,16 +2372,16 @@ uint64_t matetest(Position & board, std::vector<Move> & prev, int depth) {
 // main
 
 int main(int argc, char * argv []) {
-    // ['d4', 'e5', 'Bf4', 'Qg5', 'Kd2', 'Bb4+']
-    // ['Kd3', 'Ke3', 'Kc1', 'Nc3', 'c3']
-    // [Kd3, Ke3, Kc1, Bf4xg5, Bf4e3, Nb1c3, c3]
+    // ['f4', 'e5', 'Kf2', 'Qf6', 'f5', 'g5']
+    // ['Ke3', 'Kf3', 'Kg3', 'Ke1', 'Qe1', 'Na3', 'Nc3', 'Nf3', 'Nh3', 'a4', 'a3', 'b4', 'b3', 'c4', 'c3', 'd4', 'd3', 'e4', 'e3', 'g4', 'g3', 'h4', 'h3']
+    // [Ke3, Kf3, Kg3, Ke1, Qd1e1, Nb1a3, Nb1c3, Ng1f3, Ng1h3, a3, b3, c3, d3, e3, g3, h3, a4, b4, c4, d4, e4, g4, h4, fxg6]
     // auto P = Position();
-    // P.play(P.san_to_move("d4"));
+    // P.play(P.san_to_move("f4"));
     // P.play(P.san_to_move("e5"));
-    // P.play(P.san_to_move("Bf4"));
-    // P.play(P.san_to_move("Qg5"));
-    // P.play(P.san_to_move("Kd2"));
-    // P.play(P.san_to_move("Bb4+"));
+    // P.play(P.san_to_move("Kf2"));
+    // P.play(P.san_to_move("Qf6"));
+    // P.play(P.san_to_move("f5"));
+    // P.play(P.san_to_move("g5"));
     //
     // std::cout.flush();
     // auto M = P.legal_moves();
@@ -2412,66 +2427,66 @@ int main(int argc, char * argv []) {
 
 // pybind11
 // Python Bindings
-
-#include <fstream>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-namespace py = pybind11;
-
-PYBIND11_MODULE(chessboard2, m) {
-    py::class_<Move>(m, "Move")
-        .def(py::init<>())
-        .def("tc", &Move::tc)
-        .def("tr", &Move::tr)
-        .def("ti", &Move::ti)
-        .def("sc", &Move::sc)
-        .def("sr", &Move::sr)
-        .def("si", &Move::si)
-        .def("sp", &Move::sp)
-        .def("cp", &Move::cp)
-        .def("bqcr", &Move::bqcr)
-        .def("wqcr", &Move::wqcr)
-        .def("bkcr", &Move::bkcr)
-        .def("wkcr", &Move::wkcr)
-        .def("ep0", &Move::ep0)
-        .def("epc0", &Move::epc0)
-        .def("ep1", &Move::ep1)
-        .def("epc1", &Move::epc1)
-        .def("__repr__", &Move::repr);
-
-    py::class_<Position>(m, "Position")
-        .def(py::init<>())
-        .def("reset", &Position::reset)
-        .def("fen", &Position::fen)
-        .def("legal_moves", &Position::legal_moves)
-        .def("move_to_san", &Position::move_to_san)
-        .def("san_to_move", &Position::san_to_move)
-        .def("play", &Position::play)
-        .def("board", &Position::board)
-        .def("clone", &Position::clone)
-        .def("safe", &Position::safe)
-        .def("num_attackers", &Position::num_attackers)
-        .def("checked", &Position::checked)
-        .def("mated", &Position::mated)
-        .def("epc", &Position::epc)
-        .def("ep", &Position::ep)
-        .def("epi", &Position::epi)
-        .def("c", &Position::c)
-        .def("wkcr", &Position::wkcr)
-        .def("wqcr", &Position::wqcr)
-        .def("bkcr", &Position::bkcr)
-        .def("bqcr", &Position::bqcr)
-        .def("__repr__", &Position::fen);
-
-    m.def("perft", &perft);
-
-    m.def("capturetest", &capturetest);
-
-    m.def("checktest", &checktest);
-
-    m.def("enpassanttest", &enpassanttest);
-
-    m.def("doublechecktest", &doublechecktest);
-
-    m.def("matetest", &matetest);
-}
+//
+// #include <fstream>
+// #include <pybind11/pybind11.h>
+// #include <pybind11/stl.h>
+// namespace py = pybind11;
+//
+// PYBIND11_MODULE(chessboard2, m) {
+//     py::class_<Move>(m, "Move")
+//         .def(py::init<>())
+//         .def("tc", &Move::tc)
+//         .def("tr", &Move::tr)
+//         .def("ti", &Move::ti)
+//         .def("sc", &Move::sc)
+//         .def("sr", &Move::sr)
+//         .def("si", &Move::si)
+//         .def("sp", &Move::sp)
+//         .def("cp", &Move::cp)
+//         .def("bqcr", &Move::bqcr)
+//         .def("wqcr", &Move::wqcr)
+//         .def("bkcr", &Move::bkcr)
+//         .def("wkcr", &Move::wkcr)
+//         .def("ep0", &Move::ep0)
+//         .def("epc0", &Move::epc0)
+//         .def("ep1", &Move::ep1)
+//         .def("epc1", &Move::epc1)
+//         .def("__repr__", &Move::repr);
+//
+//     py::class_<Position>(m, "Position")
+//         .def(py::init<>())
+//         .def("reset", &Position::reset)
+//         .def("fen", &Position::fen)
+//         .def("legal_moves", &Position::legal_moves)
+//         .def("move_to_san", &Position::move_to_san)
+//         .def("san_to_move", &Position::san_to_move)
+//         .def("play", &Position::play)
+//         .def("board", &Position::board)
+//         .def("clone", &Position::clone)
+//         .def("safe", &Position::safe)
+//         .def("num_attackers", &Position::num_attackers)
+//         .def("checked", &Position::checked)
+//         .def("mated", &Position::mated)
+//         .def("epc", &Position::epc)
+//         .def("ep", &Position::ep)
+//         .def("epi", &Position::epi)
+//         .def("c", &Position::c)
+//         .def("wkcr", &Position::wkcr)
+//         .def("wqcr", &Position::wqcr)
+//         .def("bkcr", &Position::bkcr)
+//         .def("bqcr", &Position::bqcr)
+//         .def("__repr__", &Position::fen);
+//
+//     m.def("perft", &perft);
+//
+//     m.def("capturetest", &capturetest);
+//
+//     m.def("checktest", &checktest);
+//
+//     m.def("enpassanttest", &enpassanttest);
+//
+//     m.def("doublechecktest", &doublechecktest);
+//
+//     m.def("matetest", &matetest);
+// }
