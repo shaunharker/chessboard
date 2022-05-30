@@ -100,17 +100,17 @@ constexpr auto SquareBitboardRelation = enumerate(map(twopow, squares));
 
 // Special Bitboards
 constexpr Bitboard rank_8       = 0x00000000000000FFULL;
-constexpr Bitboard rank_6       = 0x0000000000FF0000ULL;
-constexpr Bitboard rank_3       = 0x0000FF0000000000ULL;
+// constexpr Bitboard rank_6       = 0x0000000000FF0000ULL;
+// constexpr Bitboard rank_3       = 0x0000FF0000000000ULL;
 constexpr Bitboard rank_1       = 0xFF00000000000000ULL;
 constexpr Bitboard file_a       = 0x0101010101010101ULL;
 constexpr Bitboard file_h       = 0x8080808080808080ULL;
 constexpr Bitboard diagonal     = 0x8040201008040201ULL;
 constexpr Bitboard antidiagonal = 0x0102040810204080ULL;
-constexpr uint64_t SE_MASK = file_a * antidiagonal;
-constexpr uint64_t NW_MASK = (~SE_MASK) | antidiagonal;
-constexpr uint64_t SW_MASK = file_a * diagonal;
-constexpr uint64_t NE_MASK = (~SW_MASK) | diagonal;
+// constexpr uint64_t SE_MASK = file_a * antidiagonal;
+// constexpr uint64_t NW_MASK = (~SE_MASK) | antidiagonal;
+// constexpr uint64_t SW_MASK = file_a * diagonal;
+// constexpr uint64_t NE_MASK = (~SW_MASK) | diagonal;
 
 // The following functions translate bitboards "west" "east"
 // "south" "north" and so on. Bits do not "roll around" but instead
@@ -148,36 +148,96 @@ constexpr auto wsw(Bitboard x) -> Bitboard {return w(sw(x));}
 
 constexpr auto ese(Bitboard x) -> Bitboard {return e(se(x));}
 
-constexpr uint64_t nw_ray(uint8_t row, uint8_t col) {
-    return (diagonal >> (8 * (7 - row) + (7 - col))) & ((row < col) ? NE_MASK : SW_MASK);
+constexpr uint64_t nw_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while ((row >= 0) && (col >= 0)) {
+        result |= s;
+        s >>= 9;
+        row -= 1;
+        col -= 1;
+    }
+    return result;
 }
 
-constexpr uint64_t n_ray(uint8_t row, uint8_t col) {
-    return file_h >> (8 * (7 - row) + (7 - col));
+constexpr uint64_t n_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while (row >= 0) {
+        result |= s;
+        s >>= 8;
+        row -= 1;
+    }
+    return result;
 }
 
-constexpr uint64_t ne_ray(uint8_t row, uint8_t col) {
-    return ((antidiagonal << col) >> (8 * (7 - row))) & ((row + col < 7) ? NW_MASK : SE_MASK);
+constexpr uint64_t ne_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while ((row >= 0) && (col <= 7)) {
+        result |= s;
+        s >>= 7;
+        row -= 1;
+        col += 1;
+    }
+    return result;
 }
 
-constexpr uint64_t w_ray(uint8_t row, uint8_t col) {
-    return (rank_8 >> (7 - col)) << (8 * row);
+constexpr uint64_t w_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while ((col >= 0)) {
+        result |= s;
+        s >>= 1;
+        col -= 1;
+    }
+    return result;
 }
 
-constexpr uint64_t e_ray(uint8_t row, uint8_t col) {
-    return ((rank_8 << col) & rank_8) << (8 * row);
+constexpr uint64_t e_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while ((col <= 7)) {
+        result |= s;
+        s <<= 1;
+        col += 1;
+    }
+    return result;
 }
 
-constexpr uint64_t sw_ray(uint8_t row, uint8_t col) {
-    return ((antidiagonal >> (7 - col)) << (8 * row)) & ((row + col < 7) ? NW_MASK : SE_MASK);
+constexpr uint64_t sw_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while ((row <= 7) && (col >= 0)) {
+        result |= s;
+        s <<= 7;
+        row += 1;
+        col -= 1;
+    }
+    return result;
 }
 
-constexpr uint64_t s_ray(uint8_t row, uint8_t col) {
-    return file_a << (8 * row + col);
+constexpr uint64_t s_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while (row <= 7) {
+        result |= s;
+        s <<= 8;
+        row += 1;
+    }
+    return result;
 }
 
-constexpr uint64_t se_ray(uint8_t row, uint8_t col) {
-    return (diagonal << (8 * row + col)) & ((row < col) ? NE_MASK : SW_MASK);
+constexpr uint64_t se_ray(int8_t row, int8_t col) {
+    uint64_t result = 0;
+    uint64_t s = 1ULL << (col + 8*row);
+    while ((row <= 7) && (col <= 7)) {
+        result |= s;
+        s <<= 9;
+        row += 1;
+        col += 1;
+    }
+    return result;
 }
 
 template <typename RayFun>
@@ -963,7 +1023,7 @@ struct Move {
 struct Position {
     // We store a chess position with 8 bitboards, two for
     // colors and six for pieces. We keep castling rights
-    // bitwise in uint8_t cr, the en passant column in
+    // bitwise in uint8_t cr_, the en passant column in
     // epc_, whether a double push occurred last move in
     // ep_, and the active color in c_:
 
@@ -975,7 +1035,7 @@ struct Position {
     Bitboard king;  // 0 for empty, 1 for kings
     Bitboard white; // 0 for empty, 1 for white pieces
     Bitboard black; // 0 for empty, 1 for black pieces
-    uint8_t cr; // castling rights. bit 0 1 2 3 ~ wk wq bk bq
+    uint8_t cr_; // castling rights. bit 0 1 2 3 ~ wk wq bk bq
     uint8_t epc_; // if ep_, col of last double push; else 0
     bool ep_; // true if last move was double push
     bool c_; // false when white to move, true when black to move
@@ -992,10 +1052,211 @@ struct Position {
         rook = 0x8100000000000081; // a1 | a8 | h1 | h8;
         bishop = 0x2400000000000024; // c1 | c8 | f1 | f8;
         knight = 0x4200000000000042; // b1 | b8 | g1 | g8;
-        cr = 0x0F; // castling rights
+        cr_ = 0x0F; // castling rights
         epc_ = 0x00; // en passant column (should be zero when ep_ == false)
         ep_ = false; // true if previous move was double push
         c_ = false; // true if black to move
+    }
+
+    Position(std::string fen) {
+        auto n = fen.size();
+        uint64_t i = 1;
+        int reading_mode = 0;
+        bool fen1 = false; // if active color read
+        bool fen2 = false; // if castling rights read
+        //bool fen3 = false; // if ep square read
+        white = black = king = pawn = queen = rook = bishop = knight = 0ULL;
+        cr_ = 0;
+        epc_ = 0;
+        ep_ = true;
+        for (uint8_t k = 0; k < n; ++ k) {
+            switch (reading_mode) {
+                case 0:  // read board
+                    switch (fen[k]) {
+                        case 'p':
+                            pawn |= i;
+                            black |= i;
+                            i <<= 1;
+                            break;
+                        case 'n':
+                            knight |= i;
+                            black |= i;
+                            i <<= 1;
+                            break;
+                        case 'b':
+                            bishop |= i;
+                            black |= i;
+                            i <<= 1;
+                            break;
+                        case 'r':
+                            rook |= i;
+                            black |= i;
+                            i <<= 1;
+                            break;
+                        case 'q':
+                            queen |= i;
+                            black |= i;
+                            i <<= 1;
+                            break;
+                        case 'k':
+                            king |= i;
+                            black |= i;
+                            i <<= 1;
+                            break;
+                        case 'P':
+                            pawn |= i;
+                            white |= i;
+                            i <<= 1;
+                            break;
+                        case 'N':
+                            knight |= i;
+                            white |= i;
+                            i <<= 1;
+                            break;
+                        case 'B':
+                            bishop |= i;
+                            white |= i;
+                            i <<= 1;
+                            break;
+                        case 'R':
+                            rook |= i;
+                            white |= i;
+                            i <<= 1;
+                            break;
+                        case 'Q':
+                            queen |= i;
+                            white |= i;
+                            i <<= 1;
+                            break;
+                        case 'K':
+                            king |= i;
+                            white |= i;
+                            i <<= 1;
+                            break;
+                        case '/':
+                            break;
+                        case '1':
+                            i <<= 1;
+                            break;
+                        case '2':
+                            i <<= 2;
+                            break;
+                        case '3':
+                            i <<= 3;
+                            break;
+                        case '4':
+                            i <<= 4;
+                            break;
+                        case '5':
+                            i <<= 5;
+                            break;
+                        case '6':
+                            i <<= 6;
+                            break;
+                        case '7':
+                            i <<= 7;
+                            break;
+                        case '8':
+                            i <<= 8;
+                            break;
+                        case ' ':
+                            if (i != 0) std::runtime_error("invalid fen");
+                            reading_mode = 1;
+                            break;
+                        default:
+                            throw std::runtime_error("invalid fen");
+                    }
+                    break;
+                case 1: // read active color
+                    switch (fen[k]) {
+                        case 'w':
+                            c_ = false;
+                            fen1 = true;
+                            break;
+                        case 'b':
+                            c_ = true;
+                            fen1 = true;
+                            break;
+                        case ' ':
+                            if (!fen1) std::runtime_error("invalid fen");
+                            reading_mode = 2;
+                            break;
+                        default:
+                            throw std::runtime_error("invalid fen");
+                    }
+                    break;
+                case 2: // read castling rights
+                    switch (fen[k]) {
+                        case 'K':
+                            cr_ |= 1;
+                            fen2 = true;
+                            break;
+                        case 'Q':
+                            cr_ |= 2;
+                            fen2 = true;
+                            break;
+                        case 'k':
+                            cr_ |= 4;
+                            fen2 = true;
+                            break;
+                        case 'q':
+                            cr_ |= 8;
+                            fen2 = true;
+                            break;
+                        case '-':
+                            fen2 = true;
+                            break;
+                        case ' ':
+                            if (!fen2) throw std::runtime_error("invalid fen");
+                            reading_mode = 3;
+                            break;
+                    }
+                    break;
+                case 3: // read ep square
+                    switch (fen[k]) {
+                        case '-':
+                            epc_ = 0;
+                            ep_ = false;
+                            break;
+                        case 'a':
+                            epc_ = 0;
+                            ep_ = true;
+                            break;
+                        case 'b':
+                            epc_ = 1;
+                            ep_ = true;
+                            break;
+                        case 'c':
+                            epc_ = 2;
+                            ep_ = true;
+                            break;
+                        case 'd':
+                            epc_ = 3;
+                            ep_ = true;
+                            break;
+                        case 'e':
+                            epc_ = 4;
+                            ep_ = true;
+                            break;
+                        case 'f':
+                            epc_ = 5;
+                            ep_ = true;
+                            break;
+                        case 'g':
+                            epc_ = 6;
+                            ep_ = true;
+                            break;
+                        case 'h':
+                            epc_ = 7;
+                            ep_ = true;
+                            break;
+                        default:
+                            break;
+                    }
+                default:
+                    break;
+            }
+        }
     }
 
     void reset() {
@@ -1007,10 +1268,10 @@ struct Position {
         return result;
     }
 
-    constexpr bool wkcr() const { return cr & 1; }
-    constexpr bool wqcr() const { return cr & 2; }
-    constexpr bool bkcr() const { return cr & 4; }
-    constexpr bool bqcr() const { return cr & 8; }
+    constexpr bool wkcr() const { return cr_ & 1; }
+    constexpr bool wqcr() const { return cr_ & 2; }
+    constexpr bool bkcr() const { return cr_ & 4; }
+    constexpr bool bqcr() const { return cr_ & 8; }
     constexpr uint8_t epc() const { return epc_; }
     constexpr bool ep() const { return ep_; }
     constexpr uint8_t epi() const { return epc_ | (c() ? 0x28 : 0x10); }
@@ -1025,7 +1286,7 @@ struct Position {
     //     king ^= rhs.king;
     //     white ^= rhs.white;
     //     black ^= rhs.black;
-    //     cr ^= rhs.cr;
+    //     cr_ ^= rhs.cr_;
     //     epc_ ^= rhs.epc_;
     //     ep_ ^= rhs.ep_;
     //     c_ ^= rhs.c_;
@@ -1066,7 +1327,7 @@ struct Position {
         epc_ ^= move.epc0();
         epc_ ^= move.epc1();
 
-        cr ^= move.cr();
+        cr_ ^= move.cr();
 
         us ^= st;
 
@@ -1118,10 +1379,6 @@ struct Position {
         }
     }
 
-    // void play(std::string s) {
-    //     Move m;
-    //
-    // }
     void undo(Move const& move) {
         play(move); // undoes itself
     }
@@ -1334,18 +1591,21 @@ struct Position {
             }
 
             auto const& [checker, pin] = CAP[address];
+
             if (checker != 0 && pin == 0) {
+                //std::cout << "rook " << int(checker) << " " << int(pin) << "\n";
                 return false;
             }
         }
 
+        //int debugint = 0;
         for (auto const& f : {nw_scan, ne_scan, sw_scan, se_scan}) {
             uint8_t f_them = f(them, sr, sc);
             uint8_t f_us = f(us, sr, sc);
             uint8_t f_qb = f(qb, sr, sc);
             uint32_t address = (f_them << 16) | (f_us << 8) | f_qb;
 
-            // std::cout << ".\n";
+            // std::cout << debugint << "...\n"; ++ debugint;
             // std::cout << std::bitset<8>(f_them) << "\n";
             // std::cout << std::bitset<8>(f_us) << "\n";
             // std::cout << std::bitset<8>(f_qb) << "\n";
@@ -1358,8 +1618,19 @@ struct Position {
             }
 
             auto const& [checker, pin] = CAP[address];
-            //std::cout << int(checker) << " " << int(pin) << "\n";
+
+
             if (checker != 0 && pin == 0) {
+                // std::cout << "bish " << int(checker) << " " << int(pin) << "\n";
+                // std::cout << "sr = " << int(sr) << "\n";
+                // std::cout << "sc = " << int(sc) << "\n";
+                // std::cout << std::bitset<8>(f_them) << "\n";
+                // std::cout << std::bitset<8>(f_us) << "\n";
+                // std::cout << std::bitset<8>(f_qb) << "\n";
+                // std::cout << Vizboard({them}) << "\n";
+                // std::cout << Vizboard({us}) << "\n";
+                // std::cout << Vizboard({qb}) << "\n";
+                // std::cout << Vizboard({SW_RAY[49]}) << "\n";
                 return false;
             }
         }
@@ -1377,6 +1648,28 @@ struct Position {
 
         // safe!
         return true;
+    }
+
+    bool king_en_prise() {
+        // Used for debugging; if true this implies
+        // the board is in an invalid state and
+        // the enemy king is already in check.
+
+        // the position is possible only if:
+        // 1. the non-active colored king is not en prise
+        // 2. there are no pawns on rank 1 or rank 8
+        // 3. moved rooks/kings imply missing castling rights
+        // 4. ep square implies non-active colored pawn
+        //    on that square
+        // 5. other conditions such as "each side has
+        //    at most 8 pawns, 1 king, and 16 pieces"
+        // We only bother with (1) here, and call
+        // that "legal".
+
+        // their king
+        uint64_t tk = king & (c() ? white : black);
+        uint8_t tki = ntz(tk);
+        return !safe(tki, !c());
     }
 
     uint8_t num_attackers(uint8_t si, bool color) {
@@ -1722,8 +2015,9 @@ struct Position {
                 std::cout.flush();
                 abort();
             }
-
+            //std::cout << "A " << int(oki) << " " << int(ti) << "\n";
             if (safe(ti, c())) {
+                //std::cout << "B " << int(oki) << " " << int(ti) << "\n";
                 // std::cout << "king move\n";
                 add_move_s_t(moves, false, KING, oki, ti);
             }
@@ -2278,16 +2572,20 @@ void moves_csv_to_stdout() {
 
 // Tests
 
-uint64_t perft(Position & board, uint8_t depth) {
+uint64_t perft(Position & board,
+    uint8_t depth, int vdepth=0) {
     uint64_t result = 0;
     if (depth == 0) return 1;
     auto legal = board.legal_moves();
     if (depth == 1) return legal.size();
     for (auto move : legal) {
         board.play(move);
-        result += perft(board, depth-1);
+        uint64_t subcnt = perft(board, depth-1, vdepth-1);
+        result += subcnt;
         board.undo(move);
+        if (vdepth > 0) std::cout << subcnt << ", ";
     }
+    if (vdepth > 0) std::cout << "\n";
     return result;
 }
 
@@ -2369,6 +2667,10 @@ uint64_t matetest(Position & board, std::vector<Move> & prev, int depth) {
     return result;
 }
 
+Position kiwipete() {
+    return Position("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -");
+}
+
 // main
 
 int main(int argc, char * argv []) {
@@ -2396,31 +2698,42 @@ int main(int argc, char * argv []) {
     // std::cout << "Toodles.\n";
 
     for (int d = 0; d < 8; ++ d) {
-        auto P = Position(); // new chessboard
+        //int d = 1;
+        auto P = kiwipete(); // new chessboard
+        // P.play(P.legal_moves()[3]);
+        // P.play(P.legal_moves()[41]);
+        // P.play(P.legal_moves()[0]);
+        // P.play(P.legal_moves()[49]);
+
         std::cout << "\n----------\ndepth " << d << "\n";
         std::cout << "perft "; std::cout.flush();
-        std::cout << perft(P, d) << "\n";
-
-        std::cout << "checks "; std::cout.flush();
-        std::cout << checktest(P, d) << "\n";
-
-        std::cout << "double checks "; std::cout.flush();
-        std::cout << doublechecktest(P, d) << "\n";
-
-        std::cout << "captures "; std::cout.flush();
-        std::cout << capturetest(P, d) << "\n";
-
-        // std::cout << "double pushes "; std::cout.flush();
-        // std::cout << doublepushtest(P, d) << "\n";
-
-        std::cout << "en passant "; std::cout.flush();
-        std::cout << enpassanttest(P, d) << "\n";
-
-        std::cout << "mates "; std::cout.flush();
-        //std::cout << P.board() << "\n";
-        std::vector<Move> prev {};
-        std::cout << matetest(P, prev, d) << "\n";
+        std::cout << perft(P, d, 0) << "\n";
     }
+        // for (auto move : P.legal_moves()) {
+        //     std::cout << "'" << P.move_to_san(move) << "', ";
+        // }
+        //std::cout << "\n";
+        //std::cout << P.board() << "\n";
+    //     std::cout << "checks "; std::cout.flush();
+    //     std::cout << checktest(P, d) << "\n";
+    //
+    //     std::cout << "double checks "; std::cout.flush();
+    //     std::cout << doublechecktest(P, d) << "\n";
+    //
+    //     std::cout << "captures "; std::cout.flush();
+    //     std::cout << capturetest(P, d) << "\n";
+    //
+    //     // std::cout << "double pushes "; std::cout.flush();
+    //     // std::cout << doublepushtest(P, d) << "\n";
+    //
+    //     std::cout << "en passant "; std::cout.flush();
+    //     std::cout << enpassanttest(P, d) << "\n";
+    //
+    //     std::cout << "mates "; std::cout.flush();
+    //     //std::cout << P.board() << "\n";
+    //     std::vector<Move> prev {};
+    //     std::cout << matetest(P, prev, d) << "\n";
+    // }
 
     return 0;
 }
