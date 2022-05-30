@@ -2111,7 +2111,8 @@ struct Position {
         while (S) {
           uint8_t si = ntz(S);
           S &= S - 1;
-          targets &= (1ULL << si);
+          uint64_t s = 1ULL << si;
+          targets &= s;
           num_checkers += 1;
         }
 
@@ -2367,7 +2368,13 @@ struct Position {
 
         // En Passant
         if (ep()) {
-            S = pawnthreats(1ULL << epi(), !c()) & our_pawns;
+            uint64_t t = 1ULL << epi();
+            if (!(targets & (c() ? (t >> 8) : (t << 8)))) {
+                // if in check, ep must capture checker
+                // en passant is never an interposition, so this works
+                return moves;
+            }
+            S = pawnthreats(t, !c()) & our_pawns;
             while (S) {
                 auto si = ntz(S);
                 S &= S-1;
@@ -2391,15 +2398,15 @@ struct Position {
                 //
                 //   pp.p    White is prevented from
                 //   ..v.    en passant capture.
-                //   rPpK  <-- row 4 = rank 5
+                //   rPpK  <-- row 3 = rank 5
                 //
                 //
-                //   RpPk  <-- row 5 = rank 4
+                //   RpPk  <-- row 4 = rank 4
                 //   ..^.    Black is prevented from
                 //   PP.P    en passant capture.
                 //
                 //  (the v and ^ indicate ep square)
-                uint8_t row = c() ? 5 : 4;
+                uint8_t row = c() ? 4 : 3;
                 bool pin = false;
                 if (okr == row) {
                     auto R = (rook & them & (rank_8 << (8*row)));
@@ -2671,135 +2678,111 @@ Position kiwipete() {
     return Position("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -");
 }
 
+Position position3() {
+    return Position("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -");
+}
+
+Position position4() {
+    return Position("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq -");
+}
+
+Position position4R() {
+    return Position("r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ -");
+}
+
+Position position5() {
+    return Position("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ -");
+}
+
 // main
 
 int main(int argc, char * argv []) {
-    // ['f4', 'e5', 'Kf2', 'Qf6', 'f5', 'g5']
-    // ['Ke3', 'Kf3', 'Kg3', 'Ke1', 'Qe1', 'Na3', 'Nc3', 'Nf3', 'Nh3', 'a4', 'a3', 'b4', 'b3', 'c4', 'c3', 'd4', 'd3', 'e4', 'e3', 'g4', 'g3', 'h4', 'h3']
-    // [Ke3, Kf3, Kg3, Ke1, Qd1e1, Nb1a3, Nb1c3, Ng1f3, Ng1h3, a3, b3, c3, d3, e3, g3, h3, a4, b4, c4, d4, e4, g4, h4, fxg6]
-    // auto P = Position();
-    // P.play(P.san_to_move("f4"));
-    // P.play(P.san_to_move("e5"));
-    // P.play(P.san_to_move("Kf2"));
-    // P.play(P.san_to_move("Qf6"));
-    // P.play(P.san_to_move("f5"));
-    // P.play(P.san_to_move("g5"));
-    //
-    // std::cout.flush();
-    // auto M = P.legal_moves();
-    //
-    // std::cout << "legal moves\n";
-    // std::cout << P.board() << "\n";
-    // for (Move m : P.legal_moves()) {
-    //     std::cout << m.repr() << "\n";
-    //     std::cout << P.move_to_san(m) << "\n";
+    // for (int d = 0; d < 8; ++ d) {
+    //     auto P = position3(); // new chessboard
+    //     std::cout << "\n----------\ndepth " << d << "\n";
+    //     std::cout << "perft "; std::cout.flush();
+    //     std::cout << perft(P, d, 0) << "\n";
     // }
-    // std::cout.flush();
-    // std::cout << "Toodles.\n";
 
-    for (int d = 0; d < 8; ++ d) {
-        //int d = 1;
-        auto P = kiwipete(); // new chessboard
-        // P.play(P.legal_moves()[3]);
-        // P.play(P.legal_moves()[41]);
-        // P.play(P.legal_moves()[0]);
-        // P.play(P.legal_moves()[49]);
-
-        std::cout << "\n----------\ndepth " << d << "\n";
-        std::cout << "perft "; std::cout.flush();
-        std::cout << perft(P, d, 0) << "\n";
+    int d = 5;
+    auto P = position3(); // new chessboard
+    // P.play(P.legal_moves()[2]);
+    // P.play(P.legal_moves()[0]);
+    // P.play(P.legal_moves()[1]);
+    // P.play(P.legal_moves()[16]);
+    std::cout << "\n----------\ndepth " << d << "\n";
+    std::cout << "perft "; std::cout.flush();
+    std::cout << perft(P, d, 1) << "\n";
+    for (auto move : P.legal_moves()) {
+        std::cout << P.move_to_san(move) << " ";
     }
-        // for (auto move : P.legal_moves()) {
-        //     std::cout << "'" << P.move_to_san(move) << "', ";
-        // }
-        //std::cout << "\n";
-        //std::cout << P.board() << "\n";
-    //     std::cout << "checks "; std::cout.flush();
-    //     std::cout << checktest(P, d) << "\n";
-    //
-    //     std::cout << "double checks "; std::cout.flush();
-    //     std::cout << doublechecktest(P, d) << "\n";
-    //
-    //     std::cout << "captures "; std::cout.flush();
-    //     std::cout << capturetest(P, d) << "\n";
-    //
-    //     // std::cout << "double pushes "; std::cout.flush();
-    //     // std::cout << doublepushtest(P, d) << "\n";
-    //
-    //     std::cout << "en passant "; std::cout.flush();
-    //     std::cout << enpassanttest(P, d) << "\n";
-    //
-    //     std::cout << "mates "; std::cout.flush();
-    //     //std::cout << P.board() << "\n";
-    //     std::vector<Move> prev {};
-    //     std::cout << matetest(P, prev, d) << "\n";
-    // }
-
+    std::cout << "\n";
+    std::cout << P.board() << "\n";
     return 0;
 }
 
 // pybind11
 // Python Bindings
-//
-// #include <fstream>
-// #include <pybind11/pybind11.h>
-// #include <pybind11/stl.h>
-// namespace py = pybind11;
-//
-// PYBIND11_MODULE(chessboard2, m) {
-//     py::class_<Move>(m, "Move")
-//         .def(py::init<>())
-//         .def("tc", &Move::tc)
-//         .def("tr", &Move::tr)
-//         .def("ti", &Move::ti)
-//         .def("sc", &Move::sc)
-//         .def("sr", &Move::sr)
-//         .def("si", &Move::si)
-//         .def("sp", &Move::sp)
-//         .def("cp", &Move::cp)
-//         .def("bqcr", &Move::bqcr)
-//         .def("wqcr", &Move::wqcr)
-//         .def("bkcr", &Move::bkcr)
-//         .def("wkcr", &Move::wkcr)
-//         .def("ep0", &Move::ep0)
-//         .def("epc0", &Move::epc0)
-//         .def("ep1", &Move::ep1)
-//         .def("epc1", &Move::epc1)
-//         .def("__repr__", &Move::repr);
-//
-//     py::class_<Position>(m, "Position")
-//         .def(py::init<>())
-//         .def("reset", &Position::reset)
-//         .def("fen", &Position::fen)
-//         .def("legal_moves", &Position::legal_moves)
-//         .def("move_to_san", &Position::move_to_san)
-//         .def("san_to_move", &Position::san_to_move)
-//         .def("play", &Position::play)
-//         .def("board", &Position::board)
-//         .def("clone", &Position::clone)
-//         .def("safe", &Position::safe)
-//         .def("num_attackers", &Position::num_attackers)
-//         .def("checked", &Position::checked)
-//         .def("mated", &Position::mated)
-//         .def("epc", &Position::epc)
-//         .def("ep", &Position::ep)
-//         .def("epi", &Position::epi)
-//         .def("c", &Position::c)
-//         .def("wkcr", &Position::wkcr)
-//         .def("wqcr", &Position::wqcr)
-//         .def("bkcr", &Position::bkcr)
-//         .def("bqcr", &Position::bqcr)
-//         .def("__repr__", &Position::fen);
-//
-//     m.def("perft", &perft);
-//
-//     m.def("capturetest", &capturetest);
-//
-//     m.def("checktest", &checktest);
-//
-//     m.def("enpassanttest", &enpassanttest);
-//
-//     m.def("doublechecktest", &doublechecktest);
-//
-//     m.def("matetest", &matetest);
-// }
+
+#include <fstream>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+namespace py = pybind11;
+
+PYBIND11_MODULE(chessboard2, m) {
+    py::class_<Move>(m, "Move")
+        .def(py::init<>())
+        .def("tc", &Move::tc)
+        .def("tr", &Move::tr)
+        .def("ti", &Move::ti)
+        .def("sc", &Move::sc)
+        .def("sr", &Move::sr)
+        .def("si", &Move::si)
+        .def("sp", &Move::sp)
+        .def("cp", &Move::cp)
+        .def("bqcr", &Move::bqcr)
+        .def("wqcr", &Move::wqcr)
+        .def("bkcr", &Move::bkcr)
+        .def("wkcr", &Move::wkcr)
+        .def("ep0", &Move::ep0)
+        .def("epc0", &Move::epc0)
+        .def("ep1", &Move::ep1)
+        .def("epc1", &Move::epc1)
+        .def("__repr__", &Move::repr);
+
+    py::class_<Position>(m, "Position")
+        .def(py::init<>())
+        .def("reset", &Position::reset)
+        .def("fen", &Position::fen)
+        .def("legal_moves", &Position::legal_moves)
+        .def("move_to_san", &Position::move_to_san)
+        .def("san_to_move", &Position::san_to_move)
+        .def("play", &Position::play)
+        .def("board", &Position::board)
+        .def("clone", &Position::clone)
+        .def("safe", &Position::safe)
+        .def("num_attackers", &Position::num_attackers)
+        .def("checked", &Position::checked)
+        .def("mated", &Position::mated)
+        .def("epc", &Position::epc)
+        .def("ep", &Position::ep)
+        .def("epi", &Position::epi)
+        .def("c", &Position::c)
+        .def("wkcr", &Position::wkcr)
+        .def("wqcr", &Position::wqcr)
+        .def("bkcr", &Position::bkcr)
+        .def("bqcr", &Position::bqcr)
+        .def("__repr__", &Position::fen);
+
+    m.def("perft", &perft);
+    m.def("kiwipete", &kiwipete);
+    m.def("position3", &position3);
+    m.def("position4", &position4);
+    m.def("position4R", &position4R);
+    m.def("position5", &position5);
+    m.def("capturetest", &capturetest);
+    m.def("checktest", &checktest);
+    m.def("enpassanttest", &enpassanttest);
+    m.def("doublechecktest", &doublechecktest);
+    m.def("matetest", &matetest);
+}
