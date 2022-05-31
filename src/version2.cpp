@@ -1,4 +1,4 @@
-// fastchessboard.cpp
+// version2.cpp
 // Shaun Harker 2022-05-09
 // locked on 2022-05-13-1948
 // MIT LICENSE

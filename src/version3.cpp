@@ -1,6 +1,7 @@
-// moves.cpp
+// version3.cpp
 // Shaun Harker
 // BSD ZERO CLAUSE LICENSE
+// locked on 2022-05-30
 
 #include <algorithm>
 #include <array>
@@ -762,10 +763,7 @@ struct Position {
     bool ep_; // true if last move was double push
     bool c_; // false when white to move, true when black to move
 
-    // DEBUG
-    std::vector<Move> tape;
-
-    Position() : tape() {
+    Position() {
         white = 0xFFFF000000000000; // rank_1 | rank_2;
         black = 0x000000000000FFFF; // rank_7 | rank_8;
         king = 0x1000000000000010; // e1 | e8;
@@ -1021,18 +1019,6 @@ struct Position {
         auto sp = move.sp();
         auto cp = move.cp();
         auto color = move.c();
-
-        // DEBUG
-        if (color == c()) {
-            tape.push_back(move);
-        } else {
-            if (tape.empty()) {
-                std::cout << "invalid tape pop\n";
-                std::cout.flush();
-                abort();
-            }
-            tape.pop_back();
-        }
 
         uint64_t s = move.s();
         uint64_t t = move.t();
