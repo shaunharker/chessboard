@@ -764,6 +764,7 @@ struct Chessboard {
     bool c_; // false when white to move, true when black to move
     uint8_t halfmove_; // number of halfmoves (plies) since last capture or pawn push
     uint16_t fullmove_; // number of full moves (starts at 1 by convention)
+    Bitboard highlight_; // highlighted squares
 
     Chessboard() {
         white = 0xFFFF000000000000; // rank_1 | rank_2;
@@ -780,6 +781,7 @@ struct Chessboard {
         c_ = false; // true if black to move
         halfmove_ = 0;
         fullmove_ = 1;
+        highlight_ = 0;
     }
 
     Chessboard(std::string fen) {
@@ -1050,6 +1052,8 @@ struct Chessboard {
         uint64_t s = move.s();
         uint64_t t = move.t();
         uint64_t st = move.st();
+
+        highlight_ = st;
 
         uint64_t & us = color ? black : white;
         uint64_t & them = color ? white : black;
@@ -1382,10 +1386,10 @@ struct Chessboard {
         throw std::runtime_error("illegal move");
     }
 
-    void play(std::string moves) {
-        std::istringstream iss(moves);
-        std::string m;
-        while(iss >> m) play_move(san_to_move(m));
+    Move play(std::string san_move) {
+        auto move = san_to_move(san_move);
+        play_move(move);
+        return move;
     }
 
     bool mated() {
@@ -1828,8 +1832,11 @@ struct Chessboard {
 
     std::string repr_html() {
         std::ostringstream oss;
-        std::string tddark("<td style=\"width: 45px; height: 45px; border: 1px solid #000; position: relative; background-color: #b58863;\">");
-        std::string tdlight("<td style=\"width: 45px; height: 45px; border: 1px solid #000; position: relative; background-color: #f0d9b5;\">");
+        std::string tdwhite("<td style=\"width: 45px; height: 45px; position: relative; background-color: #ffffff; text-align: center; vertical-align: middle;\">");
+        std::string tddark("<td style=\"width: 45px; height: 45px; position: relative; background-color: #d18b47; padding: 0px;\">");
+        std::string tdlight("<td style=\"width: 45px; height: 45px; position: relative; background-color: #ffce9e; padding: 0px;\">");
+        std::string tddarklast("<td style=\"width: 45px; height: 45px; position: relative; background-color: #aaa23b; padding: 0px;\">");
+        std::string tdlightlast("<td style=\"width: 45px; height: 45px; position: relative; background-color: #cdd16a; padding: 0px;\">");
         std::string whiteking("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"45\" height=\"45\"> <g style=\"fill:none; fill-opacity:1; fill-rule:evenodd; stroke:#000000; stroke-width:1.5; stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4; stroke-dasharray:none; stroke-opacity:1;\"> <path d=\"M 22.5,11.63 L 22.5,6\" style=\"fill:none; stroke:#000000; stroke-linejoin:miter;\"/> <path d=\"M 20,8 L 25,8\" style=\"fill:none; stroke:#000000; stroke-linejoin:miter;\"/> <path d=\"M 22.5,25 C 22.5,25 27,17.5 25.5,14.5 C 25.5,14.5 24.5,12 22.5,12 C 20.5,12 19.5,14.5 19.5,14.5 C 18,17.5 22.5,25 22.5,25\" style=\"fill:#ffffff; stroke:#000000; stroke-linecap:butt; stroke-linejoin:miter;\"/> <path d=\"M 12.5,37 C 18,40.5 27,40.5 32.5,37 L 32.5,30 C 32.5,30 41.5,25.5 38.5,19.5 C 34.5,13 25,16 22.5,23.5 L 22.5,27 L 22.5,23.5 C 20,16 10.5,13 6.5,19.5 C 3.5,25.5 12.5,30 12.5,30 L 12.5,37\" style=\"fill:#ffffff; stroke:#000000;\"/> <path d=\"M 12.5,30 C 18,27 27,27 32.5,30\" style=\"fill:none; stroke:#000000;\"/> <path d=\"M 12.5,33.5 C 18,30.5 27,30.5 32.5,33.5\" style=\"fill:none; stroke:#000000;\"/> <path d=\"M 12.5,37 C 18,34 27,34 32.5,37\" style=\"fill:none; stroke:#000000;\"/> </g></svg>");
         std::string blackking("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"45\" height=\"45\"> <g style=\"fill:none; fill-opacity:1; fill-rule:evenodd; stroke:#000000; stroke-width:1.5; stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4; stroke-dasharray:none; stroke-opacity:1;\"> <path d=\"M 22.5,11.63 L 22.5,6\" style=\"fill:none; stroke:#000000; stroke-linejoin:miter;\" id=\"path6570\"/> <path d=\"M 22.5,25 C 22.5,25 27,17.5 25.5,14.5 C 25.5,14.5 24.5,12 22.5,12 C 20.5,12 19.5,14.5 19.5,14.5 C 18,17.5 22.5,25 22.5,25\" style=\"fill:#000000;fill-opacity:1; stroke-linecap:butt; stroke-linejoin:miter;\"/> <path d=\"M 12.5,37 C 18,40.5 27,40.5 32.5,37 L 32.5,30 C 32.5,30 41.5,25.5 38.5,19.5 C 34.5,13 25,16 22.5,23.5 L 22.5,27 L 22.5,23.5 C 20,16 10.5,13 6.5,19.5 C 3.5,25.5 12.5,30 12.5,30 L 12.5,37\" style=\"fill:#000000; stroke:#000000;\"/> <path d=\"M 20,8 L 25,8\" style=\"fill:none; stroke:#000000; stroke-linejoin:miter;\"/> <path d=\"M 32,29.5 C 32,29.5 40.5,25.5 38.03,19.85 C 34.15,14 25,18 22.5,24.5 L 22.5,26.6 L 22.5,24.5 C 20,18 10.85,14 6.97,19.85 C 4.5,25.5 13,29.5 13,29.5\" style=\"fill:none; stroke:#ffffff;\"/> <path d=\"M 12.5,30 C 18,27 27,27 32.5,30 M 12.5,33.5 C 18,30.5 27,30.5 32.5,33.5 M 12.5,37 C 18,34 27,34 32.5,37\" style=\"fill:none; stroke:#ffffff;\"/> </g></svg>");
         std::string whitequeen("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"45\" height=\"45\"> <g style=\"fill:#ffffff;stroke:#000000;stroke-width:1.5;stroke-linejoin:round\"> <path d=\"M 9,26 C 17.5,24.5 30,24.5 36,26 L 38.5,13.5 L 31,25 L 30.7,10.9 L 25.5,24.5 L 22.5,10 L 19.5,24.5 L 14.3,10.9 L 14,25 L 6.5,13.5 L 9,26 z\"/> <path d=\"M 9,26 C 9,28 10.5,28 11.5,30 C 12.5,31.5 12.5,31 12,33.5 C 10.5,34.5 11,36 11,36 C 9.5,37.5 11,38.5 11,38.5 C 17.5,39.5 27.5,39.5 34,38.5 C 34,38.5 35.5,37.5 34,36 C 34,36 34.5,34.5 33,33.5 C 32.5,31 32.5,31.5 33.5,30 C 34.5,28 36,28 36,26 C 27.5,24.5 17.5,24.5 9,26 z\"/> <path d=\"M 11.5,30 C 15,29 30,29 33.5,30\" style=\"fill:none\"/> <path d=\"M 12,33.5 C 18,32.5 27,32.5 33,33.5\" style=\"fill:none\"/> <circle cx=\"6\" cy=\"12\" r=\"2\" /> <circle cx=\"14\" cy=\"9\" r=\"2\" /> <circle cx=\"22.5\" cy=\"8\" r=\"2\" /> <circle cx=\"31\" cy=\"9\" r=\"2\" /> <circle cx=\"39\" cy=\"12\" r=\"2\" /> </g></svg>");
@@ -1845,14 +1852,27 @@ struct Chessboard {
 
         oss << "<table>";
         uint64_t s = 1;
+        oss << "<tr>";
+        for (auto x : {" ", "a", "b", "c", "d", "e", "f", "g", "h", " "}) oss << tdwhite << x << "</td>";
+        oss << "</tr>";
         for (uint8_t row = 0; row < 8; ++ row) {
             oss << "<tr>";
+            oss << tdwhite << int(8-row) << "</td>";
             for (uint8_t col = 0; col < 8; ++ col) {
                 if ((row + col) & 1) {
-                    oss << tddark;
+                    if (s & highlight_) {
+                        oss << tddarklast;
+                    } else {
+                        oss << tddark;
+                    }
                 } else {
-                    oss << tdlight;
+                    if (s & highlight_) {
+                        oss << tdlightlast;
+                    } else {
+                        oss << tdlight;
+                    }
                 }
+                oss << "<div style=\"display: inline-block; margin: auto\">";
                 if (s & white) {
                     if (s & king) {
                         oss << whiteking;
@@ -1883,10 +1903,15 @@ struct Chessboard {
                     }
                 }
                 s <<= 1;
+                oss << "</div>";
                 oss << "</td>";
             }
+            oss << tdwhite << int(8-row) << "</td>";
             oss << "</tr>";
         }
+        oss << "<tr>";
+        for (auto x : {" ", "a", "b", "c", "d", "e", "f", "g", "h", " "}) oss << tdwhite << x << "</td>";
+        oss << "</tr>";
         oss << "</table>";
         return oss.str();
     }
@@ -2345,65 +2370,65 @@ int main(int argc, char * argv []) {
 
 // pybind11
 // Python Bindings
-//
-// #include <fstream>
-// #include <pybind11/pybind11.h>
-// #include <pybind11/stl.h>
-// namespace py = pybind11;
-//
-// PYBIND11_MODULE(chessboard, m) {
-//     py::class_<Move>(m, "Move")
-//         .def(py::init<>())
-//         .def("tc", &Move::tc)
-//         .def("tr", &Move::tr)
-//         .def("ti", &Move::ti)
-//         .def("sc", &Move::sc)
-//         .def("sr", &Move::sr)
-//         .def("si", &Move::si)
-//         .def("sp", &Move::sp)
-//         .def("cp", &Move::cp)
-//         .def("bqcr", &Move::bqcr)
-//         .def("wqcr", &Move::wqcr)
-//         .def("bkcr", &Move::bkcr)
-//         .def("wkcr", &Move::wkcr)
-//         .def("ep0", &Move::ep0)
-//         .def("epc0", &Move::epc0)
-//         .def("ep1", &Move::ep1)
-//         .def("epc1", &Move::epc1)
-//         .def("__repr__", &Move::repr);
-//
-//     py::class_<Chessboard>(m, "Chessboard")
-//         .def(py::init<>())
-//         .def(py::init<std::string>())
-//         .def("fen", &Chessboard::fen)
-//         .def("play", &Chessboard::play)
-//         .def("legal", &Chessboard::legal)
-//         .def("legal_moves", &Chessboard::legal_moves)
-//         .def("move_to_san", &Chessboard::move_to_san)
-//         .def("san_to_move", &Chessboard::san_to_move)
-//         .def("play_move", &Chessboard::play_move)
-//         .def("undo_move", &Chessboard::undo_move)
-//         .def("board", &Chessboard::board)
-//         .def("clone", &Chessboard::clone)
-//         .def("checked", &Chessboard::checked)
-//         .def("mated", &Chessboard::mated)
-//         .def("epc", &Chessboard::epc)
-//         .def("ep", &Chessboard::ep)
-//         .def("epi", &Chessboard::epi)
-//         .def("c", &Chessboard::c)
-//         .def("wkcr", &Chessboard::wkcr)
-//         .def("wqcr", &Chessboard::wqcr)
-//         .def("bkcr", &Chessboard::bkcr)
-//         .def("bqcr", &Chessboard::bqcr)
-//         .def("_repr_html_", &Chessboard::repr_html)
-//         .def("__repr__", &Chessboard::fen);
-//
-//     m.def("perft", &perft);
-//     m.def("kiwipete", &kiwipete);
-//     m.def("position3", &position3);
-//     m.def("position4", &position4);
-//     m.def("position4R", &position4R);
-//     m.def("position5", &position5);
-//     m.def("position6", &position6);
 
-// }
+#include <fstream>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+namespace py = pybind11;
+
+PYBIND11_MODULE(chessboard, m) {
+    py::class_<Move>(m, "Move")
+        .def(py::init<>())
+        .def("tc", &Move::tc)
+        .def("tr", &Move::tr)
+        .def("ti", &Move::ti)
+        .def("sc", &Move::sc)
+        .def("sr", &Move::sr)
+        .def("si", &Move::si)
+        .def("sp", &Move::sp)
+        .def("cp", &Move::cp)
+        .def("bqcr", &Move::bqcr)
+        .def("wqcr", &Move::wqcr)
+        .def("bkcr", &Move::bkcr)
+        .def("wkcr", &Move::wkcr)
+        .def("ep0", &Move::ep0)
+        .def("epc0", &Move::epc0)
+        .def("ep1", &Move::ep1)
+        .def("epc1", &Move::epc1)
+        .def("__repr__", &Move::repr);
+
+    py::class_<Chessboard>(m, "Chessboard")
+        .def(py::init<>())
+        .def(py::init<std::string>())
+        .def("fen", &Chessboard::fen)
+        .def("play", &Chessboard::play)
+        .def("legal", &Chessboard::legal)
+        .def("legal_moves", &Chessboard::legal_moves)
+        .def("move_to_san", &Chessboard::move_to_san)
+        .def("san_to_move", &Chessboard::san_to_move)
+        .def("play_move", &Chessboard::play_move)
+        .def("undo_move", &Chessboard::undo_move)
+        .def("board", &Chessboard::board)
+        .def("clone", &Chessboard::clone)
+        .def("checked", &Chessboard::checked)
+        .def("mated", &Chessboard::mated)
+        .def("epc", &Chessboard::epc)
+        .def("ep", &Chessboard::ep)
+        .def("epi", &Chessboard::epi)
+        .def("c", &Chessboard::c)
+        .def("wkcr", &Chessboard::wkcr)
+        .def("wqcr", &Chessboard::wqcr)
+        .def("bkcr", &Chessboard::bkcr)
+        .def("bqcr", &Chessboard::bqcr)
+        .def("_repr_html_", &Chessboard::repr_html)
+        .def("__repr__", &Chessboard::fen);
+
+    m.def("perft", &perft);
+    m.def("kiwipete", &kiwipete);
+    m.def("position3", &position3);
+    m.def("position4", &position4);
+    m.def("position4R", &position4R);
+    m.def("position5", &position5);
+    m.def("position6", &position6);
+
+}
