@@ -1000,7 +1000,6 @@ struct Chessboard {
         }
 
         auto clockstr = fen.substr(clk_start, std::string::npos);
-        std::cout << "clockstr =" << clockstr << "\n";
         std::istringstream iss(clockstr);
         if (clockstr.size() > 0) {
             int x;
@@ -1858,29 +1857,29 @@ struct Chessboard {
                     if (s & king) {
                         oss << whiteking;
                     } else if (s & queen) {
-                        ss << whitequeen;
+                        oss << whitequeen;
                     } else if (s & bishop) {
-                        ss << whitebishop;
+                        oss << whitebishop;
                     } else if (s & knight) {
-                        ss << whiteknight;
+                        oss << whiteknight;
                     } else if (s & rook) {
-                        ss << whiterook;
+                        oss << whiterook;
                     } else if (s & pawn) {
-                        ss << whitepawn;
+                        oss << whitepawn;
                     }
                 } else if (s & black) {
                     if (s & king) {
-                        ss << blackking;
+                        oss << blackking;
                     } else if (s & queen) {
-                        ss << blackqueen;
+                        oss << blackqueen;
                     } else if (s & bishop) {
-                        ss << blackbishop;
+                        oss << blackbishop;
                     } else if (s & knight) {
-                        ss << blackknight;
+                        oss << blackknight;
                     } else if (s & rook) {
-                        ss << blackrook;
+                        oss << blackrook;
                     } else if (s & pawn) {
-                        ss << blackpawn;
+                        oss << blackpawn;
                     }
                 }
                 s <<= 1;
