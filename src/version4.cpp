@@ -765,6 +765,7 @@ struct Chessboard {
     uint8_t halfmove_; // number of halfmoves (plies) since last capture or pawn push
     uint16_t fullmove_; // number of full moves (starts at 1 by convention)
     Bitboard highlight_; // highlighted squares
+    std::vector<Move> tape_; // record of moves
 
     Chessboard() {
         white = 0xFFFF000000000000; // rank_1 | rank_2;
@@ -792,7 +793,7 @@ struct Chessboard {
         bool fen1 = false; // if active color read
         bool fen2 = false; // if castling rights read
         bool fen3 = false; // if ep square read
-        bool fen4 = false; // if halfmove clock read
+        //bool fen4 = false; // if halfmove clock read
         white = black = king = pawn = queen = rook = bishop = knight = 0ULL;
         cr_ = 0;
         epc_ = 0;
@@ -1042,18 +1043,24 @@ struct Chessboard {
             if (color) { // black move
                 fullmove_ += 1;
             }
+            tape_.push_back(move);
         } else {
             halfmove_ -= 1;
             if (color) {
                 fullmove_ -= 1;
             }
+            tape_.pop_back();
         }
 
         uint64_t s = move.s();
         uint64_t t = move.t();
         uint64_t st = move.st();
 
-        highlight_ = st;
+        if (!tape_.empty()) {
+            highlight_ = tape_.back().st();
+        } else {
+            highlight_ = 0;
+        }
 
         uint64_t & us = color ? black : white;
         uint64_t & them = color ? white : black;
@@ -1118,8 +1125,9 @@ struct Chessboard {
         }
     }
 
-    void undo_move(Move const& move) {
-        play_move(move); // undoes itself
+    void undo() {
+        if (tape_.empty()) return;
+        play_move(tape_.back()); // undoes itself
     }
 
     std::string board() const {
@@ -1300,7 +1308,7 @@ struct Chessboard {
                     uint8_t oki = ntz(ok);
                     bool moved_into_check = !(move.c() ? safe<true>(oki) : safe<false>(oki));
                     if (!moved_into_check) S |= (1ULL << ti);
-                    undo_move(m);
+                    play_move(m); // same as undo()
                 }
             }
             if (popcount(S) == 1) return;
@@ -1372,7 +1380,7 @@ struct Chessboard {
                 ss << "+";
             }
         }
-        undo_move(move);
+        play_move(move); // same as undo()
         return ss.str();
     }
 
@@ -1386,10 +1394,9 @@ struct Chessboard {
         throw std::runtime_error("illegal move");
     }
 
-    Move play(std::string san_move) {
+    void play(std::string san_move) {
         auto move = san_to_move(san_move);
         play_move(move);
-        return move;
     }
 
     bool mated() {
@@ -1832,8 +1839,8 @@ struct Chessboard {
 
     std::string repr_html() {
         std::ostringstream oss;
-        std::string tdleftright("<td style=\"width: 1em; height: 45px; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle;\">");
-        std::string tdtopbottom("<td style=\"width: 45px; height: 1em; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle;\">");
+        std::string tdleftright("<td style=\"width: 1em; height: 45px; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle; user-select: none;\">");
+        std::string tdtopbottom("<td style=\"width: 45px; height: 1em; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle; user-select: none;\">");
         std::string tdcorner("<td style=\"width: 1em; height: 1em; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle;\"></td>");
         std::string tddark("<td style=\"width: 45px; height: 45px; position: relative; background-color: #d18b47; padding: 0px;\">");
         std::string tdlight("<td style=\"width: 45px; height: 45px; position: relative; background-color: #ffce9e; padding: 0px;\">");
@@ -2330,7 +2337,7 @@ uint64_t perft(Chessboard & board, uint8_t depth) {
         board.play_move(move);
         uint64_t subcnt = perft(board, depth-1);
         result += subcnt;
-        board.undo_move(move);
+        board.undo();
     }
     return result;
 }
@@ -2408,12 +2415,12 @@ PYBIND11_MODULE(chessboard, m) {
         .def(py::init<std::string>())
         .def("fen", &Chessboard::fen)
         .def("play", &Chessboard::play)
+        .def("undo", &Chessboard::undo)
         .def("legal", &Chessboard::legal)
         .def("legal_moves", &Chessboard::legal_moves)
         .def("move_to_san", &Chessboard::move_to_san)
         .def("san_to_move", &Chessboard::san_to_move)
         .def("play_move", &Chessboard::play_move)
-        .def("undo_move", &Chessboard::undo_move)
         .def("board", &Chessboard::board)
         .def("clone", &Chessboard::clone)
         .def("checked", &Chessboard::checked)
