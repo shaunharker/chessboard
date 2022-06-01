@@ -1832,7 +1832,9 @@ struct Chessboard {
 
     std::string repr_html() {
         std::ostringstream oss;
-        std::string tdwhite("<td style=\"width: 45px; height: 45px; position: relative; background-color: #ffffff; text-align: center; vertical-align: middle;\">");
+        std::string tdleftright("<td style=\"width: 1em; height: 45px; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle;\">");
+        std::string tdtopbottom("<td style=\"width: 45px; height: 1em; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle;\">");
+        std::string tdcorner("<td style=\"width: 1em; height: 1em; position: relative; background-color: #000000; color: #ffffff; font-weight: bold; text-align: center; vertical-align: middle;\"></td>");
         std::string tddark("<td style=\"width: 45px; height: 45px; position: relative; background-color: #d18b47; padding: 0px;\">");
         std::string tdlight("<td style=\"width: 45px; height: 45px; position: relative; background-color: #ffce9e; padding: 0px;\">");
         std::string tddarklast("<td style=\"width: 45px; height: 45px; position: relative; background-color: #aaa23b; padding: 0px;\">");
@@ -1853,11 +1855,13 @@ struct Chessboard {
         oss << "<table>";
         uint64_t s = 1;
         oss << "<tr>";
-        for (auto x : {" ", "a", "b", "c", "d", "e", "f", "g", "h", " "}) oss << tdwhite << x << "</td>";
+        oss << tdcorner;
+        for (auto x : {"a", "b", "c", "d", "e", "f", "g", "h"}) oss << tdtopbottom << x << "</td>";
+        oss << tdcorner;
         oss << "</tr>";
         for (uint8_t row = 0; row < 8; ++ row) {
             oss << "<tr>";
-            oss << tdwhite << int(8-row) << "</td>";
+            oss << tdleftright << int(8-row) << "</td>";
             for (uint8_t col = 0; col < 8; ++ col) {
                 if ((row + col) & 1) {
                     if (s & highlight_) {
@@ -1906,11 +1910,13 @@ struct Chessboard {
                 oss << "</div>";
                 oss << "</td>";
             }
-            oss << tdwhite << int(8-row) << "</td>";
+            oss << tdleftright << int(8-row) << "</td>";
             oss << "</tr>";
         }
         oss << "<tr>";
-        for (auto x : {" ", "a", "b", "c", "d", "e", "f", "g", "h", " "}) oss << tdwhite << x << "</td>";
+        oss << tdcorner;
+        for (auto x : {"a", "b", "c", "d", "e", "f", "g", "h"}) oss << tdtopbottom << x << "</td>";
+        oss << tdcorner;
         oss << "</tr>";
         oss << "</table>";
         return oss.str();
