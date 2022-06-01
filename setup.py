@@ -7,8 +7,8 @@ from setuptools import setup
 
 ###
 MODULENAME = "chessboard"
-VERSION = "0.0.1"
-DESCRIPTION = "A Python chessboard with FEN and legal move generation. Implemented with C++ and pybind11."
+VERSION = "1.0.0"
+DESCRIPTION = "A Python chessboard with FEN, SAN, legal move generation, and html display. Implemented with C++ and pybind11."
 ###
 
 # The main interface is through Pybind11Extension.
@@ -22,7 +22,7 @@ DESCRIPTION = "A Python chessboard with FEN and legal move generation. Implement
 
 ext_modules = [
     Pybind11Extension(MODULENAME,
-        ["src/chessboard.cpp"],
+        ["src/version4.cpp"],
         # Example: passing in the version to the compiled code
         define_macros = [('VERSION_INFO', VERSION)],
         cxx_std="17"
