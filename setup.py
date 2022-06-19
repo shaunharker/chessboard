@@ -22,7 +22,7 @@ DESCRIPTION = "A Python chessboard with FEN, SAN, legal move generation, and htm
 
 ext_modules = [
     Pybind11Extension(MODULENAME,
-        ["src/version4.cpp"],
+        ["src/chessboard.cpp"],
         # Example: passing in the version to the compiled code
         define_macros = [('VERSION_INFO', VERSION)],
         cxx_std="17"
